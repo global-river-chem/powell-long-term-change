@@ -1,7 +1,7 @@
 ## ------------------------------------------------------- ##
-                    # `SiZer` Workflow
+# `SiZer` Workflow
 ## ------------------------------------------------------- ##
-# Written by: Nick J Lyon & Joanna Carey
+# Written by: Nick J Lyon & Joanna Carey; Modified by Kathi Jo Jankowski
 
 # Purpose:
 ## Run SiZer workflow on data produced by WRTDS
@@ -13,7 +13,7 @@
 ### B) manually downloaded any needed inputs and put them in a folder named "data"
 
 ## ----------------------------------------- ##
-              # Housekeeping ----
+# Housekeeping ----
 ## ----------------------------------------- ##
 
 # Need to force an install of HERON to get an updated version?
@@ -36,15 +36,15 @@ dir.create(path = file.path("graphs"), showWarnings = F)
 
 # Load custom functions
 purrr::walk(.x = dir(path = file.path("tools"), pattern = "fxn_"),
-           .f = ~ source(file.path("tools", .x)))
+            .f = ~ source(file.path("tools", .x)))
 
 ## ----------------------------------------- ##
-          # General SiZer Prep ----
+# General SiZer Prep ----
 ## ----------------------------------------- ##
 
 # What is the temporal resolution of the WRTDS output data?
 ## *MUST* be one of "annual", "seasonal", or "monthly"
-temporal_res <- "monthly"
+temporal_res <- "annual"
 
 # Flexibly determine the needed resolution of WRTDS output
 if(stringr::str_detect(string = temporal_res, pattern = "annual")){
@@ -56,12 +56,8 @@ wrtds_v1 <- read.csv(file = file.path("data", wrtds_file))
 
 # Remove unwanted data / data that don't meet needed criteria
 wrtds_v2 <- wrtds_v1 %>% 
-  # Keep only LTERs at high latitudes
-  dplyr::filter(LTER %in% c("MCM", "GRO", "NIVA", "Krycklan",
-                            "Finnish Environmental Institute", 
-                            "Canada", "Swedish Goverment")) %>% 
-  # Drop some problem sites within wanted LTERs
-  dplyr::filter(!Stream_Name %in% c("Site 69038", "Kymijoki Ahvenkoski 001", "Kymijoki Kokonkoski 014", "BEAVER RIVER ABOVE HIGHWAY 1 IN GLACIER NATIONAL PARK", "KICKING HORSE RIVER AT FIELD IN YOHO NATIONAL PARK", "SKEENA RIVER AT USK", "KOOTENAY RIVER ABOVE HIGHWAY 93 IN KOOTENAY NATIONAL PARK", "Helgean Hammarsjon", "Ronnean Klippan", "Morrumsan Morrum", "Lyckebyan Lyckeby", "Lagan Laholm", "Nissan Halmstad", "Atran Falkenberg", "Alsteran Getebro", "Eman Emsfors", "Viskan Asbro", "Gota Alv Trollhattan", "Rane alv Niemisel", "Raan Helsingborg")) %>% 
+  # Keep only select LTERS
+  dplyr::filter(LTER %in% c("UMR")) %>% 
   # Calculate number of years per stream
   dplyr::group_by(LTER, Stream_Name) %>%
   dplyr::mutate(num_years = length(unique(Year)), .after = Year) %>%
@@ -77,8 +73,8 @@ wrtds_v3 <- wrtds_v2 %>%
   dplyr::mutate(
     dplyr::across(.cols = dplyr::contains("10_6k"),
                   .fns = ~ ifelse(test = !chemical %in% c("Si:P", "Si:DIN"),
-                                  yes = (.x * 10^6), no = NA)
-                  )) %>% 
+                                  yes = (.x * (10^6)), no = NA)
+    )) %>% 
   # Rename those columns to reflect their new units
   dplyr::rename_with(.fn = ~ gsub(pattern = "10_6k", replacement = "k", x = .x),
                      .cols = dplyr::contains("10_6k")) %>% 
@@ -120,36 +116,36 @@ if(!"season" %in% names(wrtds_v3)){
 # Check structure
 dplyr::glimpse(wrtds_v4)
 
-# Remove months from McMurdo for which there shouldn't be data
-wrtds_v5 <- wrtds_v4 %>% 
-  dplyr::filter(LTER != "MCM" |
-                  (LTER == "MCM" & Month %in% c("x", 12, 1, 2)))
-
-# Check that worked
-wrtds_v5 %>% 
-  dplyr::filter(LTER == "MCM") %>% 
-  dplyr::pull(Month) %>%
-  unique()
 
 ## ----------------------------------------- ##
-          # Variable Selection ----
+# Variable Selection ----
 ## ----------------------------------------- ##
 
 # Make a "final" version of the WRTDS data
-wrtds_v99 <- wrtds_v5
+wrtds_v99 <- wrtds_v4
 
 # Choose response/explanatory variables of interest & focal chemical
-response <- "Yield"
+response <- "Conc_mgL"
 explanatory <- "Year"
 element <- "DSi"
 
 # Check that combination of variables works
-var_check(data = wrtds_v5, chem = element, 
+var_check(data = wrtds_v4, chem = element, 
           resp_var = response, exp_var = explanatory)
 
 # Prepare just the desired pieces of information
 wrtds_focal <- wrtds_v99 %>% 
   dplyr::select(LTER:chemical, dplyr::starts_with(response)) %>% 
+  dplyr::filter(chemical == element)
+
+# Prepare for discharge, use Q record from just one element
+# Choose response/explanatory variables of interest & focal chemical
+response <- "Discharge_cms"
+explanatory <- "Year"
+element <- "DSi"
+
+wrtds_focal <-  wrtds_v99 %>% 
+  dplyr::select(LTER:chemical, dplyr::starts_with("Discharge")) %>% 
   dplyr::filter(chemical == element)
 
 # Check structure
@@ -159,12 +155,14 @@ dplyr::glimpse(wrtds_focal)
 ## Data output
 (data_outs <- paste0("sizer-outs_", temporal_res))
 dir.create(path = file.path("data", data_outs), showWarnings = F)
+
 ## Diagnostic graph outputs
 (graph_outs = paste(temporal_res, response, element, sep = "_"))
 dir.create(path = file.path("graphs", graph_outs), showWarnings = F)
 
+
 ## ----------------------------------------- ##
-          # Core SiZer Workflow ----
+# Core SiZer Workflow ----
 ## ----------------------------------------- ##
 
 # Make some empty lists to store different bits of information
@@ -174,7 +172,7 @@ estimate_list <- list()
 
 # Loop across streams
 for(place in unique(wrtds_focal$stream)){
-# for(place in "Iijoki Raasakan voimal"){
+  # for(place in "Iijoki Raasakan voimal"){
   
   # Starting message
   message("Processing begun for ", element, " ", response, " at ", place)
@@ -282,7 +280,7 @@ for(place in unique(wrtds_focal$stream)){
 } # Close processing loop
 
 ## ----------------------------------------- ##
-            # Process Outputs ----
+# Process Outputs ----
 ## ----------------------------------------- ##
 
 # Process the data first
@@ -335,7 +333,7 @@ statistic_actual <- purrr::list_rbind(x = statistic_list) %>%
 dplyr::glimpse(statistic_actual)
 
 ## ----------------------------------------- ##
-            # Combine Outputs ----
+# Combine Outputs ----
 ## ----------------------------------------- ##
 
 # Combine these three types of output
@@ -383,9 +381,9 @@ combo_v3 <- combo_v2 %>%
   dplyr::mutate(site_simp = gsub(pattern = " at", replacement = " ", x = stream)) %>% 
   # Simplify other place information column contents
   dplyr::mutate(LTER_simp = ifelse(nchar(LTER) <= 4, yes = LTER,
-                                     no = stringr::str_sub(LTER, start = 1, end = 4)),
+                                   no = stringr::str_sub(LTER, start = 1, end = 4)),
                 site_simp = ifelse(nchar(site_simp) <= 14, yes = site_simp,
-                                     no = stringr::str_sub(site_simp, start = 1, end = 14)),
+                                   no = stringr::str_sub(site_simp, start = 1, end = 14)),
                 LTER_stream = paste0(LTER_simp, "_", site_simp), .after = stream) %>% 
   # Drop intermediary columns
   dplyr::select(-dplyr::ends_with("_simp")) %>% 
@@ -411,7 +409,7 @@ supportR::diff_check(old = unique(c(names(data_actual), names(estimate_actual), 
                      new = names(combo_v3))
 
 ## ----------------------------------------- ##
-                # Export ----
+# Export ----
 ## ----------------------------------------- ##
 
 # Tweak the 'stream' column name to be more explicit
@@ -427,3 +425,4 @@ write.csv(x = combo_v4, na = "", row.names = F,
           file = file.path("data", data_outs, paste0("sizer-outs_", graph_outs, ".csv")))
 
 # End ----
+
