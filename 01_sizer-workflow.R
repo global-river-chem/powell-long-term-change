@@ -57,7 +57,7 @@ wrtds_v1 <- read.csv(file = file.path("data", wrtds_file))
 # Remove unwanted data / data that don't meet needed criteria
 wrtds_v2 <- wrtds_v1 %>% 
   # Keep only select LTERS
-  dplyr::filter(LTER %in% c("UMR")) %>% 
+  # dplyr::filter(LTER %in% c("UMR")) %>% 
   # Calculate number of years per stream
   dplyr::group_by(LTER, Stream_Name) %>%
   dplyr::mutate(num_years = length(unique(Year)), .after = Year) %>%
