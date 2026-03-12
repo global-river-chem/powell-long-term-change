@@ -22,8 +22,8 @@ rm(list = ls())
 
 # Make needed folder(s)
 dir.create(path = file.path("data"), showWarnings = F)
-dir.create(path = file.path("data", "map-data"), showWarnings = F)
-dir.create(path = file.path("data", "driver-only"), showWarnings = F)
+#dir.create(path = file.path("data", "map-data"), showWarnings = F)
+#dir.create(path = file.path("data", "driver-only"), showWarnings = F)
 
 ## ----------------------------------------- ##
         # WRTDS Outputs Download ----
