@@ -180,6 +180,8 @@ totals <- long_record_cluster %>%
   group_by(cluster) %>% 
   summarise(n=n())
 
+totals
+
 
 # Plot averages by cluster ------------------------------------------------
 
@@ -206,7 +208,7 @@ plot_dat %>%
 
 
 
-# Plot time series --------------------------------------------------------
+# Plot time series and save --------------------------------------------------------
 # plot change over time
 
 plot_dat <- kalman_dat %>%
@@ -290,6 +292,7 @@ decades_v3 %>%
 
 
 # Analyze trends ----------------------------------------------------------
+
 conc_slope <- annual_dat %>% 
   filter(Stream_Name %in% long_record_si$Stream_Name) %>% 
   filter(!is.na(FNConc_mgL)) %>% 
@@ -341,80 +344,11 @@ dis_slope <- annual_dat %>%
 sig_dis <- dis_slope %>% 
   filter(p.value <= 0.05)
 
-# analyze trends by decade ------------------------------------------------
-
-# RUN TREND TEST
-conc_slope_decade <- kalman_dat_v1 %>% 
-  filter(chemical != "DIN") %>% 
-  filter(stream_decade_chemical %in% all_chem_decades$stream_decade_chemical) %>% 
-  filter(!is.na(FNConc_mgL)) %>% 
-  group_by(Stream_Name,decade,chemical) %>%
-  group_modify(~ modified_sens.slope(.x$FNConc_mgL))
-
-yield_slope_decade <- kalman_dat_v1 %>% 
-  filter(chemical != "DIN") %>% 
-  filter(stream_decade_chemical %in% all_chem_decades$stream_decade_chemical) %>% 
-  filter(!is.na(FNYield)) %>% 
-  group_by(Stream_Name,decade,chemical) %>%
-  group_modify(~ modified_sens.slope(.x$FNConc_mgL))
 
 
+# Plot results of trend tests ---------------------------------------------
 
-conc_slope_decade_v0 <- conc_slope_decade %>% 
-  mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
-                            p.value < 0.05 & estimates < 0 ~ "decrease",
-                            p.value >= 0.05 ~ "no change")) %>% 
-  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
-                              .default = chemical)) %>% 
-  left_join(cluster_dat,by="Stream_Name") %>% 
-  select(Stream_Name,decade,chemical,cluster_name,change,p.value,statistic,estimates,low.conf,high.conf)
-
-
-# summarize change by decade and chemical
-conc_slope_decade_v1 <- conc_slope_decade %>% 
-  mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
-                            p.value < 0.05 & estimates < 0 ~ "decrease",
-                            p.value >= 0.05 ~ "no change")) %>% 
-  left_join(cluster_dat,by="Stream_Name") %>% 
-  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
-                              .default = chemical)) %>%
-  filter(!is.na(cluster)) %>% 
-  filter(chemical != "DIN") %>% 
-  group_by(chemical, decade, cluster_name,change) %>% 
-  summarise(n=n())
-
-conc_slope_decade_v1 %>% 
-  #filter(!is.na(cluster)) %>% 
-  filter(chemical == "DSi"|chemical == "NO3"|chemical == "P") %>% 
-  ggplot(aes(decade, n, fill=change))+
-  geom_col(position="stack")+
-  scale_fill_viridis(discrete=TRUE, option="magma")+
-  facet_grid(chemical~cluster_name)
-
-# create dataset to show proportions by decade
-conc.change = aggregate(Stream_Name~chemical*decade*cluster_name*change, FUN=length, data=conc_slope_decade_v0)
-conc.total = aggregate(Stream_Name~chemical*decade*cluster_name, FUN=length, data=conc_slope_decade_v0)
-
-# not sure why getting an error
-conc.prop <- conc.change %>% 
-  filter(chemical == "NO3"|chemical == "P"|chemical == "DSi") %>% 
-  left_join(conc.total, by=c("chemical","decade","cluster_name")) %>% 
-  mutate(prop.streams = Stream_Name.x/Stream_Name.y)
-
-conc.prop %>% 
-  filter(chemical == "DSi"|chemical == "NO3"|chemical == "P") %>% 
-  ggplot(aes(x = decade, y=prop.streams,fill=change))+
-  geom_bar(stat="identity")+
-  theme(axis.text.x=element_text(angle=0), legend.title=element_blank())+
-  xlab("")+ylab("Proportion of Sites")+ggtitle("Concentration")+
-  scale_fill_viridis(discrete=TRUE, option="magma")+
-  theme(legend.position="right")+
-  facet_grid(chemical~cluster_name)
-
-
-
-
-# Plot results of trencluster_name# Plot results of trend tests ---------------------------------------------
+# concentration
 si_conc_change <- conc_slope %>% 
   mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
                             p.value < 0.05 & estimates < 0 ~ "decrease",
@@ -425,7 +359,95 @@ si_conc_change <- conc_slope %>%
 si_conc_change_lu <- si_conc_change %>% 
   left_join(cluster_dat,by="Stream_Name")
 
-# plot in order of magnitude change# plot in order of magnitude change
+# yield
+yield_change <- yield_slope %>% 
+  mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
+                            p.value < 0.05 & estimates < 0 ~ "decrease",
+                            p.value >= 0.05 ~ "no change")) %>% 
+  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
+                              .default = chemical))
+
+yield_change_cluster <- yield_change %>% 
+  left_join(cluster_dat,by="Stream_Name")
+
+
+# Discharge
+dis_change <- dis_slope %>% 
+  mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
+                            p.value < 0.05 & estimates < 0 ~ "decrease",
+                            p.value >= 0.05 ~ "no change"))
+
+dis_cluster <- dis_change %>% 
+  left_join(cluster_dat,by="Stream_Name")
+
+## Aggregate by cluster
+
+
+## Concentration 
+conc.agr = aggregate(Stream_Name~chemical*cluster_name*change, FUN=length, data=si_conc_change_lu)
+conc.agr1 = aggregate(Stream_Name~chemical*cluster_name, FUN=length, data=si_conc_change_lu)
+conc.agr2 <- conc.agr %>% 
+  left_join(conc.agr1, by=c("chemical","cluster_name"))
+
+conc.agr2$prop.streams <-  conc.agr2$Stream_Name.x/conc.agr2$Stream_Name.y
+
+conc.agr2$chemical <- as.factor(conc.agr2$chemical)
+
+conc.agr2 %>% 
+  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
+                              .default = chemical)) %>% 
+  filter(chemical == "Si:P") %>% 
+  #mutate(chemical = fct_relevel(chemical, "DSi","NO3","NOx","P","DIN","NH4","Si:DIN","Si:P")) %>% 
+  ggplot(aes(x = cluster_name, y=prop.streams,fill=change))+
+  geom_bar(stat="identity")+
+  theme(axis.text.x=element_text(angle=0), legend.title=element_blank())+
+  xlab("")+ylab("Proportion of Sites")+ggtitle("Concentration")+
+  scale_fill_viridis(discrete=TRUE, option="magma")+
+  theme(legend.position="right")+
+  ggtitle("Si:P")
+
+## Yield 
+yield.agr = aggregate(Stream_Name~chemical*cluster_name*change, FUN=length, data=yield_change_cluster)
+yield.agr1 = aggregate(Stream_Name~chemical*cluster_name, FUN=length, data=yield_change_cluster)
+yield.agr2 <- yield.agr %>% 
+  left_join(yield.agr1, by=c("chemical","cluster_name"))
+
+yield.agr2$prop.streams <-  yield.agr2$Stream_Name.x/yield.agr2$Stream_Name.y
+
+yield.agr2$chemical <- as.factor(yield.agr2$chemical)
+
+yield.agr2 %>% 
+  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
+                              .default = chemical)) %>% 
+  filter(chemical == "P") %>% 
+  ggplot(aes(x = cluster_name, y=prop.streams,fill=change))+
+  geom_bar(stat="identity")+
+  theme(axis.text.x=element_text(angle=0), legend.title=element_blank())+
+  xlab("")+ylab("Proportion of Sites")+
+  scale_fill_viridis(discrete=TRUE, option="magma")+
+  theme(legend.position="right")+
+  ggtitle("Yield change for P")
+
+## Discharge
+dis.agr = aggregate(Stream_Name~cluster_name*change, FUN=length, data=dis_cluster)
+dis.agr1 = aggregate(Stream_Name~cluster_name, FUN=length, data=dis_cluster)
+dis.agr2 <- dis.agr %>% 
+  left_join(dis.agr1, by=c("cluster_name"))
+
+dis.agr2$prop.streams <-  dis.agr2$Stream_Name.x/dis.agr2$Stream_Name.y
+
+dis.agr2 %>% 
+  ggplot(aes(x = cluster_name, y=prop.streams,fill=change))+
+  geom_bar(stat="identity")+
+  theme(axis.text.x=element_text(angle=0), legend.title=element_blank())+
+  xlab("")+ylab("Proportion of Sites")+
+  scale_fill_viridis(discrete=TRUE, option="magma")+
+  theme(legend.position="right")+
+  ggtitle("Discharge")
+
+
+
+# plot in order of magnitude change
 si_conc_plot <- si_conc_change_lu %>% 
   filter(!is.na(cluster)) %>% 
   filter(Stream_Name != "BILLABONG CREEK AT DARLOT") %>% 
@@ -512,39 +534,6 @@ ratio_plot <- plot_grid(SiN_conc_plot,SiP_conc_plot, ncol=2,align="vh")
 nutrient_plot
 ratio_plot
 
-## Aggregate by cluster
-
-conc.agr = aggregate(Stream_Name~chemical*cluster_name*change, FUN=length, data=si_conc_change_lu)
-conc.agr1 = aggregate(Stream_Name~chemical*cluster_name, FUN=length, data=si_conc_change_lu)
-conc.agr2 <- conc.agr %>% 
-  left_join(conc.agr1, by=c("chemical","cluster_name"))
-
-conc.agr2$prop.streams <-  conc.agr2$Stream_Name.x/conc.agr2$Stream_Name.y
-
-conc.agr2$chemical <- as.factor(conc.agr2$chemical)
-
-conc.agr2 %>% 
-  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
-                              .default = chemical)) %>% 
-  filter(chemical == "Si:P") %>% 
-  #mutate(chemical = fct_relevel(chemical, "DSi","NO3","NOx","P","DIN","NH4","Si:DIN","Si:P")) %>% 
-  ggplot(aes(x = cluster_name, y=prop.streams,fill=change))+
-  geom_bar(stat="identity")+
-  theme(axis.text.x=element_text(angle=0), legend.title=element_blank())+
-  xlab("")+ylab("Proportion of Sites")+ggtitle("Concentration")+
-  scale_fill_viridis(discrete=TRUE, option="magma")+
-  theme(legend.position="right")+
-  ggtitle("Si:P")
-
-
-
-si_conc_change %>% 
-  filter(p.value<0.05) %>% 
-  filter(estimates>-1) %>% 
-  filter(estimates<1) %>% 
-  ggplot(aes(estimates))+
-  geom_histogram()+
-  facet_wrap(~chemical)
 
 # x axis - land cover/biome, panels 
 
@@ -582,6 +571,163 @@ yield
 
 library(cowplot)
 plot_grid(conc,yield,nrow=2,align="vh",nrow=1,rel_heights=c(1.25,1))
+
+
+# analyze trends by decade ------------------------------------------------
+
+conc_slope_decade <- kalman_dat_v1 %>% 
+  filter(chemical != "DIN") %>% 
+  filter(stream_decade_chemical %in% all_chem_decades$stream_decade_chemical) %>% 
+  filter(!is.na(FNConc_mgL)) %>% 
+  group_by(Stream_Name,decade,chemical) %>%
+  group_modify(~ modified_sens.slope(.x$FNConc_mgL))
+
+yield_slope_decade <- kalman_dat_v1 %>% 
+  filter(chemical != "DIN") %>% 
+  filter(stream_decade_chemical %in% all_chem_decades$stream_decade_chemical) %>% 
+  filter(!is.na(FNYield)) %>% 
+  group_by(Stream_Name,decade,chemical) %>%
+  group_modify(~ modified_sens.slope(.x$FNYield))
+
+dis_slope_decade <- kalman_dat_v1 %>% 
+  filter(chemical == "DSi") %>% 
+  filter(stream_decade_chemical %in% all_chem_decades$stream_decade_chemical) %>% 
+  group_by(Stream_Name,decade) %>%
+  group_modify(~ modified_sens.slope(.x$Discharge_cms))
+
+
+# summarize change by decade and chemical
+
+conc_slope_decade_v0 <- conc_slope_decade %>% 
+  mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
+                            p.value < 0.05 & estimates < 0 ~ "decrease",
+                            p.value >= 0.05 ~ "no change")) %>% 
+  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
+                              .default = chemical)) %>% 
+  left_join(cluster_dat,by="Stream_Name") %>% 
+  select(Stream_Name,decade,chemical,cluster_name,change,p.value,statistic,estimates,low.conf,high.conf)
+
+
+conc_slope_decade_v1 <- conc_slope_decade %>% 
+  mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
+                            p.value < 0.05 & estimates < 0 ~ "decrease",
+                            p.value >= 0.05 ~ "no change")) %>% 
+  left_join(cluster_dat,by="Stream_Name") %>% 
+  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
+                              .default = chemical)) %>%
+  filter(!is.na(cluster)) %>% 
+  filter(chemical != "DIN") %>% 
+  group_by(chemical, decade, cluster_name,change) %>% 
+  summarise(n=n())
+
+conc_slope_decade_v1 %>% 
+  #filter(!is.na(cluster)) %>% 
+  filter(chemical == "DSi"|chemical == "NO3"|chemical == "P") %>% 
+  ggplot(aes(decade, n, fill=change))+
+  geom_col(position="stack")+
+  scale_fill_viridis(discrete=TRUE, option="magma")+
+  facet_grid(chemical~cluster_name)
+
+# create dataset to show proportions by decade
+conc.change = aggregate(Stream_Name~chemical*decade*cluster_name*change, FUN=length, data=conc_slope_decade_v0)
+conc.total = aggregate(Stream_Name~chemical*decade*cluster_name, FUN=length, data=conc_slope_decade_v0)
+
+# not sure why getting an error
+conc.prop <- conc.change %>% 
+  filter(chemical == "NO3"|chemical == "P"|chemical == "DSi") %>% 
+  left_join(conc.total, by=c("chemical","decade","cluster_name")) %>% 
+  mutate(prop.streams = Stream_Name.x/Stream_Name.y)
+
+conc.prop %>% 
+  filter(chemical == "DSi"|chemical == "NO3"|chemical == "P") %>% 
+  ggplot(aes(x = decade, y=prop.streams,fill=change))+
+  geom_bar(stat="identity")+
+  theme(axis.text.x=element_text(angle=0), legend.title=element_blank())+
+  xlab("")+ylab("Proportion of Sites")+ggtitle("Concentration")+
+  scale_fill_viridis(discrete=TRUE, option="magma")+
+  theme(legend.position="right")+
+  facet_grid(chemical~cluster_name)
+
+
+#######################################
+# Yield change by decade
+
+yield_slope_decade_v0 <- yield_slope_decade %>% 
+  mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
+                            p.value < 0.05 & estimates < 0 ~ "decrease",
+                            p.value >= 0.05 ~ "no change")) %>% 
+  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
+                              .default = chemical)) %>% 
+  left_join(cluster_dat,by="Stream_Name") %>% 
+  select(Stream_Name,decade,chemical,cluster_name,change,p.value,statistic,estimates,low.conf,high.conf)
+
+
+yield_slope_decade_v1 <- yield_slope_decade %>% 
+  mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
+                            p.value < 0.05 & estimates < 0 ~ "decrease",
+                            p.value >= 0.05 ~ "no change")) %>% 
+  left_join(cluster_dat,by="Stream_Name") %>% 
+  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
+                              .default = chemical)) %>%
+  filter(!is.na(cluster)) %>% 
+  filter(chemical != "DIN") %>% 
+  group_by(chemical, decade, cluster_name,change) %>% 
+  summarise(n=n())
+
+yield_slope_decade_v1 %>% 
+  #filter(!is.na(cluster)) %>% 
+  filter(chemical == "DSi"|chemical == "NO3"|chemical == "P") %>% 
+  ggplot(aes(decade, n, fill=change))+
+  geom_col(position="stack")+
+  scale_fill_viridis(discrete=TRUE, option="magma")+
+  facet_grid(chemical~cluster_name)
+
+# create dataset to show proportions by decade
+yield.change = aggregate(Stream_Name~chemical*decade*cluster_name*change, FUN=length, data=yield_slope_decade_v0)
+yield.total = aggregate(Stream_Name~chemical*decade*cluster_name, FUN=length, data=yield_slope_decade_v0)
+
+# not sure why getting an error
+yield.prop <- yield.change %>% 
+  filter(chemical == "NO3"|chemical == "P"|chemical == "DSi") %>% 
+  left_join(yield.total, by=c("chemical","decade","cluster_name")) %>% 
+  mutate(prop.streams = Stream_Name.x/Stream_Name.y)
+
+yield.prop %>% 
+  filter(chemical == "DSi"|chemical == "NO3"|chemical == "P") %>% 
+  ggplot(aes(x = decade, y=prop.streams,fill=change))+
+  geom_bar(stat="identity")+
+  theme(axis.text.x=element_text(angle=0), legend.title=element_blank())+
+  xlab("")+ylab("Proportion of Sites")+ggtitle("Yield")+
+  scale_fill_viridis(discrete=TRUE, option="magma")+
+  theme(legend.position="right")+
+  facet_grid(chemical~cluster_name)
+
+########################################
+## Discharge change by decade 
+dis_slope_decade_v0 <- dis_slope_decade %>% 
+  mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
+                            p.value < 0.05 & estimates < 0 ~ "decrease",
+                            p.value >= 0.05 ~ "no change")) %>% 
+  left_join(cluster_dat,by="Stream_Name") %>% 
+  select(Stream_Name,decade,cluster_name,change,p.value,statistic,estimates,low.conf,high.conf)
+
+
+dis_slope_decade_v1 <- dis_slope_decade %>% 
+  mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
+                            p.value < 0.05 & estimates < 0 ~ "decrease",
+                            p.value >= 0.05 ~ "no change")) %>% 
+  left_join(cluster_dat,by="Stream_Name") %>% 
+  filter(!is.na(cluster)) %>% 
+  group_by(decade, cluster_name,change) %>% 
+  summarise(n=n())
+
+dis_slope_decade_v1 %>% 
+  #filter(!is.na(cluster)) %>% 
+  #filter(chemical == "DSi"|chemical == "NO3"|chemical == "P") %>% 
+  ggplot(aes(decade, n, fill=change))+
+  geom_col(position="stack")+
+  scale_fill_viridis(discrete=TRUE, option="magma")+
+  facet_grid(~cluster_name)
 
 # ridge plot
 ridges_all <- si_conc_change_lu |> 
