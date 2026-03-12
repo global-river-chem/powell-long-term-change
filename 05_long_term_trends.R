@@ -7,25 +7,6 @@ library(googledrive)
 library(ggridges)
 library(cowplot)
 
-#install.packages('trend')
-
-modified_sens.slope <- function(x, ...) {
-  result <- sens.slope(x, ...)
-  tibble(
-    p.value = result$p.value,
-    statistic = result$statistic,
-    estimates = result$estimates[1],
-    low.conf = result$conf.int[1],
-    high.conf = result$conf.int[2])
-}
-
-modified_mk_test <- function(x, ...) {
-  result <- mk.test(x, ...)
-  tibble(
-    p.value = result$p.value,
-    statistic = result$statistic,
-    estimates = result$estimates[1])
-}
 
 # directory for downloading files from google drive
 (path <- scicomptools::wd_loc(local = FALSE, remote_path = file.path('/', "home","jankowski","data")))
@@ -38,7 +19,6 @@ modified_mk_test <- function(x, ...) {
 # Data import -------------------------------------------------------------
 # Annual data - generalized flow normalization 
 annual_dat <- read.csv(file.path(path_2, "Full_Results_WRTDS_annual.csv"))
-
 
 # Annual data - Kalman 
 kalman_dat <- read.csv(file.path(path_2, "Full_Results_WRTDS_kalman_annual.csv"))
@@ -72,6 +52,26 @@ cluster_dat$cluster_name <- as.factor(cluster_dat$cluster_name)
 glimpse(cluster_dat)
 
 
+# Functions needed --------------------------------------------------------
+
+modified_sens.slope <- function(x, ...) {
+  result <- sens.slope(x, ...)
+  tibble(
+    p.value = result$p.value,
+    statistic = result$statistic,
+    estimates = result$estimates[1],
+    low.conf = result$conf.int[1],
+    high.conf = result$conf.int[2])
+}
+
+modified_mk_test <- function(x, ...) {
+  result <- mk.test(x, ...)
+  tibble(
+    p.value = result$p.value,
+    statistic = result$statistic,
+    estimates = result$estimates[1])
+}
+
 # Filter out datasets with long records ----------------------------------
 
 # summarizing record lengths by stream and chemical
@@ -85,15 +85,8 @@ duration_dat <- annual_dat %>%
 long_records <- duration_dat %>% 
   filter(duration >= 15) 
 
-# check sites that don't have cluster information
-missing <- anti_join(annual_dat, cluster_dat, by="Stream_Name") %>% 
-  distinct(LTER,Stream_Name) %>% 
-  filter(LTER != "MCM")
 
-write.csv(missing, file.path(path, "missing_spatial_data.csv"))
-
-
-# plot temporal overlap
+# plot temporal overlap of chemicals
 duration_dat %>% 
   filter(chemical == "DSi"| chemical == "NO3"|chemical == "NOx"|chemical == "P"| chemical == "NH4") %>% 
   #filter(chemical == "Si:P"|chemical == "Si:DIN") %>% 
@@ -178,38 +171,39 @@ duration_dat %>%
   theme(axis.text.y = element_blank())+
   ylab("Streams")+xlab("Year")
 
-## counting by LTER
-lters <- si %>% 
-  filter(chemical == "DSi") %>% 
-  select(Stream_Name,LTER) %>% 
-  distinct()
 
 # join with cluster data
-long_record_si2 <- long_record_si %>% 
+long_record_cluster <- long_record_si %>% 
   left_join(cluster_dat,by="Stream_Name")
 
-totals <- long_record_si2 %>% 
-  group_by(major_land) %>% 
+totals <- long_record_cluster %>% 
+  group_by(cluster) %>% 
   summarise(n=n())
 
-totals %>% 
-  filter(!is.na(major_land)) %>% 
-  ggplot(aes(reorder(major_land,n),n,fill=cluster))+
-  geom_col()+
+
+# Plot averages by cluster ------------------------------------------------
+
+plot_dat <- kalman_dat %>%
+  filter(Stream_Name %in% long_records$Stream_Name) %>% 
+  #filter(chemical == "DSi") %>% 
+  left_join(cluster_dat, by="Stream_Name")
+
+glimpse(plot_dat)
+
+plot_dat %>% 
+  filter(chemical != "DIN") %>% 
+  filter(!is.na(cluster)) %>% 
+  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
+                              .default = chemical)) %>% 
+  ggplot(aes(as.factor(cluster_name),GenYield, fill=cluster_name)) +
+  geom_boxplot()+
+  facet_wrap(~chemical, scales="free", nrow=2)+
   coord_flip()+
-  xlab("")+ylab("Number of sites")+
-  ggtitle("DSi")+
-  scale_fill_viridis(discrete=TRUE)+
-  theme(legend.position="none")
+  xlab("")+ylab("log(Yield (10^6kg/yr/km2))")+
+  scale_y_log10()+
+  theme(legend.position="none")+
+  scale_fill_brewer(palette="Set2")
 
-
-# checking datasets that overlap with MODIS
-modis_dat <- data.frame(start_date = 2001, end_date = 2015)
-
-# how many sites have modis period of record within their time frame
-check_overlap <- inner_join(modis_dat, long_records, join_by(within(start_date,end_date,min_year,max_year)))
-
-aggregate(Stream_Name~chemical, FUN=length, data=check_overlap)
 
 
 # Plot time series --------------------------------------------------------
@@ -239,6 +233,9 @@ dev.off()
 
 # plot by year
 kalman_dat %>% 
+  filter(chemical != "DIN") %>% 
+  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
+                              .default = chemical)) %>% 
   group_by(Year,chemical,Stream_Name) %>% 
   summarise(n = n()) %>% 
   #filter(chemical == "DSi") %>% 
@@ -285,6 +282,8 @@ decades_v3 <- decades_v2 %>%
 
 decades_v3 %>% 
   filter(chemical != "DIN") %>% 
+  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
+                              .default = chemical)) %>% 
   ggplot(aes(decade,n))+
   geom_col()+
   facet_wrap(~chemical, ncol=1)
@@ -378,28 +377,28 @@ conc_slope_decade_v1 <- conc_slope_decade %>%
                             p.value >= 0.05 ~ "no change")) %>% 
   left_join(cluster_dat,by="Stream_Name") %>% 
   mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
-                              .default = chemical)) %>% 
+                              .default = chemical)) %>%
+  filter(!is.na(cluster)) %>% 
   filter(chemical != "DIN") %>% 
   group_by(chemical, decade, cluster_name,change) %>% 
   summarise(n=n())
 
 conc_slope_decade_v1 %>% 
-  filter(!is.na(cluster)) %>% 
+  #filter(!is.na(cluster)) %>% 
   filter(chemical == "DSi"|chemical == "NO3"|chemical == "P") %>% 
-  filter(Stream_Name != "BILLABONG CREEK AT DARLOT") %>% 
   ggplot(aes(decade, n, fill=change))+
   geom_col(position="stack")+
   scale_fill_viridis(discrete=TRUE, option="magma")+
   facet_grid(chemical~cluster_name)
 
 # create dataset to show proportions by decade
-conc.change = aggregate(Stream_Name~chemical*decade*cluster*change, FUN=length, data=conc_slope_decade_v0)
-conc.total = aggregate(Stream_Name~chemical*decade*cluster, FUN=length, data=conc_slope_decade_v0)
+conc.change = aggregate(Stream_Name~chemical*decade*cluster_name*change, FUN=length, data=conc_slope_decade_v0)
+conc.total = aggregate(Stream_Name~chemical*decade*cluster_name, FUN=length, data=conc_slope_decade_v0)
 
 # not sure why getting an error
 conc.prop <- conc.change %>% 
   filter(chemical == "NO3"|chemical == "P"|chemical == "DSi") %>% 
-  left_join(conc.total, by=c("chemical","decade","cluster")) %>% 
+  left_join(conc.total, by=c("chemical","decade","cluster_name")) %>% 
   mutate(prop.streams = Stream_Name.x/Stream_Name.y)
 
 conc.prop %>% 
@@ -410,12 +409,12 @@ conc.prop %>%
   xlab("")+ylab("Proportion of Sites")+ggtitle("Concentration")+
   scale_fill_viridis(discrete=TRUE, option="magma")+
   theme(legend.position="right")+
-  facet_grid(chemical~cluster)
+  facet_grid(chemical~cluster_name)
 
 
 
 
-# Plot results of trend tests ---------------------------------------------
+# Plot results of trencluster_name# Plot results of trend tests ---------------------------------------------
 si_conc_change <- conc_slope %>% 
   mutate(change = case_when(p.value < 0.05 & estimates > 0 ~ "increase",
                             p.value < 0.05 & estimates < 0 ~ "decrease",
