@@ -148,7 +148,8 @@ si_n_p <- si_n %>%
 # Plot streams that have Si, NO3/NOx and P by LTER
 duration_dat %>% 
   filter(Stream_Name %in% si_n_p$Stream_Name) %>% 
-  filter(chemical == "DSi"| chemical == "NO3"|chemical == "NOx"|chemical == "P") %>% 
+  filter(chemical == "NO3"|chemical == "NOx") %>% 
+  #filter(chemical == "DSi"| chemical == "NO3"|chemical == "NOx"|chemical == "P") %>% 
   #filter(chemical == "Si:P"|chemical == "Si:DIN") %>% 
   ggplot()+
   geom_segment(aes(x=min_year,xend=max_year,
@@ -181,32 +182,6 @@ totals <- long_record_cluster %>%
   summarise(n=n())
 
 totals
-
-
-# Plot averages by cluster ------------------------------------------------
-
-plot_dat <- kalman_dat %>%
-  filter(Stream_Name %in% long_records$Stream_Name) %>% 
-  #filter(chemical == "DSi") %>% 
-  left_join(cluster_dat, by="Stream_Name")
-
-glimpse(plot_dat)
-
-plot_dat %>% 
-  filter(chemical != "DIN") %>% 
-  filter(!is.na(cluster)) %>% 
-  mutate(chemical = case_when(chemical == "NO3"| chemical == "NOx" ~ "NO3", 
-                              .default = chemical)) %>% 
-  ggplot(aes(as.factor(cluster_name),GenYield, fill=cluster_name)) +
-  geom_boxplot()+
-  facet_wrap(~chemical, scales="free", nrow=2)+
-  coord_flip()+
-  xlab("")+ylab("log(Yield (10^6kg/yr/km2))")+
-  scale_y_log10()+
-  theme(legend.position="none")+
-  scale_fill_brewer(palette="Set2")
-
-
 
 # Plot time series and save --------------------------------------------------------
 # plot change over time
