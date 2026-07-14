@@ -33,26 +33,15 @@ The cutoff comparison tests all combinations of:
 - 10, 25, 50, and 100 river-km from the ocean
 - 80%, 90%, and 95% of the connected outlet drainage area captured upstream of the sampling site
 
-No single cutoff has been selected. Distance and basin coverage should remain continuous variables in the main analysis.
-
 ## Site Groups
 
 - **All matched sites:** Use for network-position analyses and site-level WRTDS flux analyses
 - **Ocean-connected sites:** Use to assess potential downstream silica transport
 - **Near-mouth, high-coverage sites:** Use when a station needs to serve as a possible estimate of flux near the ocean
 
-The near-mouth group does not identify the rivers contributing the most silica. A large river can carry a high silica flux even when its sampling site is farther upstream. WRTDS flux, discharge, and absolute drainage area will be used to evaluate contribution size.
+## Future Work
 
-## Next Analysis Step
-
-Join the annual DSi WRTDS data to the matched sites and retain:
-
-- `GenFlux_10_6kmol_yr` for modeled annual silica flux at the station
-- `FNFlux_10_6kmol_yr` for flow-normalized flux trends
-- `GenYield_10_6kmol_yr_km2` for modeled annual yield
-- `FNYield_10_6kmol_yr_km2` for flow-normalized yield trends
-
-Flux measured or modeled at an inland station is site-level flux, not necessarily ocean flux. Downstream tributary inputs, reservoirs, biological uptake, and silica retention can change the amount reaching the ocean. McNicol et al. (2023) is useful background for this future flux work because that study combined downstream concentration data with discharge or runoff estimates to estimate ocean export; it is not the method used for the current network-position calculation.
+Network position could later be compared with WRTDS flux estimates. McNicol et al. (2023) provides background for that analysis.
 
 ## Files
 
@@ -62,8 +51,8 @@ One row per site successfully matched to HydroRIVERS.
 
 | Column | Meaning |
 |---|---|
-| `LTER` | LTER or project code |
-| `Stream_Name` | Stream or river name used by the project |
+| `LTER` | LTER |
+| `Stream_Name` | Stream name |
 | `Latitude` | Latitude used to match the site to HydroRIVERS |
 | `Longitude` | Longitude used to match the site to HydroRIVERS |
 | `HYRIV_ID` | Unique HydroRIVERS identifier for the matched river segment |
@@ -100,8 +89,8 @@ Rows that could not be included cleanly or need a coordinate check. A site may a
 | Column | Meaning |
 |---|---|
 | `review_issue` | Reason the row needs review: missing coordinates, invalid coordinates, outside HydroRIVERS coverage, or a large snapping distance |
-| `LTER` | LTER or project code |
-| `Stream_Name` | Stream or river name |
+| `LTER` | LTER |
+| `Stream_Name` | Stream name |
 | `Latitude` | Latitude available for review |
 | `Longitude` | Longitude available for review |
 | `snap_distance_km` | Distance to the matched HydroRIVERS segment when a match was possible |
