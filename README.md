@@ -12,6 +12,7 @@ All scripts listed below assume that you have run the preceding number script. S
 - **`03d_land-rock-graphs.R`** - Makes simple graphs of element concentration against lithology/land cover categories
 - **`03e_figures.R`** - Makes publication-quality figures from extracted SiZer information
 - **`04_tables.R`** - Generates publication-quality summary tables
+- **`06_network-position.R`** - Calculates each site's downstream position in the HydroRIVERS network. Methods, outputs, and column definitions are in [`README_network-position.md`](README_network-position.md).
 
 ## Related Repositories
 
