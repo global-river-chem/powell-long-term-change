@@ -13,13 +13,16 @@ Before running:
 
 - change `data_root` to the local `long-term-change` folder
 - change `master_data_root` to the local `master-datasets` folder
+- export the current live site-reference table and set `site_reference_file` to
+  that export
 - use `stability_bootstraps <- 10L` for a quick trial or `100L` for a full run
 - leave `make_plots <- TRUE` to create the three final plots
 - set `refit_models <- TRUE` after changing data or model settings
 - set `refit_models <- FALSE` to reuse matching saved results and recreate plots
 
-The two path comments near the top of the main script show exactly which folders
-to change. Input filenames are defined in `rf_trend/specification.R`.
+The path comments near the top of the main script show which folders and live
+export to change. Other input filenames are defined in
+`rf_trend/specification.R`.
 
 ## First-time setup
 
@@ -51,7 +54,7 @@ All supplied Si slopes are retained regardless of statistical significance.
 Significance is used only to distinguish points in the performance plot. NH4 is
 not used, and sites are not removed solely because their Si slopes are extreme.
 
-The response files contain 126 sites. Both models use the same 116 sites with
+The response files contain 126 sites. Both models use the same 115 sites with
 complete values for every selected predictor.
 
 ## Complete cases
@@ -60,13 +63,15 @@ Predictors are not imputed. A site is retained only when all 21 average
 predictors and all eight trend predictors are finite. Using one complete cohort
 for both predictor sets keeps their testing comparison paired.
 
-Ten sites are excluded:
+Eleven sites are excluded:
 
 - Ciudad Bolivar, Congo a Beach Brazzaville, SKEENA RIVER AT USK, and Saut
   Maripa lack P
 - AMFREVILLE-SOUS-LES-MONTS and POSES 3 lack a specific-discharge trend
 - CARRIERES-SOUS-POISSY and IVRY-SUR-SEINE lack an evapotranspiration trend
 - Obidos and ST. LAWRENCE lack RCS
+- Lower Atchafalaya has no valid drainage area in the live reference and
+  therefore lacks specific discharge
 
 Each saved model object records these sites and missing predictors under
 `excluded_sites`. The workflow also stops if a missing or non-finite value
@@ -105,6 +110,13 @@ At least five annual observations within 2002–2022 are required to calculate a
 driver trend. This is an observation-coverage rule within the fixed period, not
 a five-year model.
 
+## Drainage areas
+
+Specific discharge uses `drainSqKm` from active WRTDS rows in the latest live
+site-reference export. Supplied yield slopes are rescaled by `old area / live
+area`, which changes magnitude but not sign or significance. Lower Atchafalaya
+is excluded because its area is undetermined.
+
 ## N and P
 
 N combines NO3 and NOx. P combines the comparable dissolved P records. The
@@ -120,10 +132,10 @@ assigned estimated P values.
 
 The primary analysis uses ten repeated outer site splits. Each split contains:
 
-- 93 training sites, or approximately 80% of the 116 complete sites
+- 92 training sites, or 80% of the 115 complete sites
 - 23 testing sites, or approximately 20%
 
-The model is fitted with the 93 training sites and then predicts the 23 sites
+The model is fitted with the 92 training sites and then predicts the 23 sites
 that were not used for that fit. This process is repeated ten times with
 different seeded site assignments.
 
@@ -170,7 +182,7 @@ defined in `default_rf_settings()` in
 sensitivity analysis, then set `refit_models <- TRUE`.
 
 After validation, the workflow applies the same tuning and stability procedure
-to all 116 sites and saves one final reusable model. Its out-of-bag result is
+to all 115 sites and saves one final reusable model. Its out-of-bag result is
 not substituted for the repeated-split testing performance.
 
 ## SHAP
@@ -194,7 +206,7 @@ four designs:
 - 80% training and 20% testing, balanced by environmental cluster
 - 60% training and 40% testing, balanced by environmental cluster
 
-Each design is repeated ten times. The 60/40 design contains 70 training and 46
+Each design is repeated ten times. The 60/40 design contains 69 training and 46
 testing sites. Paired seeds generate one balanced site order for each
 stratification method, so the 23 testing sites in an 80/20 repetition are
 contained within the corresponding 46 testing sites in its 60/40 repetition.
@@ -220,31 +232,12 @@ squared Pearson correlation, which answers a different question. The saved
 objects contain predictive R-squared, squared Pearson correlation, RMSE, and
 MAE.
 
-## Current 100-bootstrap results
+## Current results
 
-Performance remains weak under the corrected repeated-split design:
-
-| Response | Median R², static + averages | Median R², plus Sen slopes | Mean R², plus Sen slopes | Median RMSE, plus Sen slopes |
-|---|---:|---:|---:|---:|
-| Si concentration slope | -0.075 | -0.052 | -0.010 | 0.696 |
-| Si yield slope | -0.903 | -0.055 | -0.436 | 3.09e-7 |
-
-Adding 2002–2022 driver Sen slopes improves the median testing result for both
-responses, especially yield, but the primary 80/20 lithology-balanced models
-still have negative predictive R-squared. They do not yet support reliable
-out-of-sample prediction.
-
-The 80/20 environmental-cluster sensitivity gives a median concentration
-predictive R-squared of 0.034, but its mean is -0.013 and results vary
-substantially among repetitions. This is not strong evidence that cluster
-stratification resolves the poor performance. Yield performance remains
-negative under every tested split design.
-
-Feature stability also differs by response. For concentration with Sen slopes,
-temperature Sen slope is retained in all ten outer splits; basin slope, median
-P, and specific-discharge Sen slope are each retained in nine. Yield selection
-is less consistent: specific-discharge Sen slope is retained in seven splits,
-and the five-predictor fallback is needed in two.
+The previous 100-bootstrap models used outdated drainage areas and must be
+refit. In a 10-bootstrap check, the yield model with trends had median testing
+R-squared 0.039 and mean -0.045; concentration remained weak. Do not report
+final performance, SHAP, or sensitivity results until the full refit finishes.
 
 ## Inputs
 
@@ -266,6 +259,7 @@ needs these additional inputs:
 
 - `all-data_si-extract_3_20260629.csv`
 - `Full_Results_WRTDS_kalman_annual.csv`
+- the latest export of the live `Site_Reference_Table`
 - `20260105_masterdata_chem.csv`
 
 The last file supplies raw NO3, NOx, SRP, and PO4 observations used when an
@@ -284,12 +278,14 @@ SiSyn/
 └── spatial-data-extractions/
     └── master-datasets/
         ├── Full_Results_WRTDS_kalman_annual.csv
-        └── 20260105_masterdata_chem.csv
+        ├── 20260105_masterdata_chem.csv
+        └── Site_Reference_Table_YYYYMMDD.csv
 ```
 
 If the local files use different folders, change `data_root` and
-`master_data_root` in `07_rf_trend_slopes.R`. If a filename changes, update it
-in `rf_input_files()` in `rf_trend/specification.R`.
+`master_data_root` in `07_rf_trend_slopes.R`. Set `site_reference_file` there to
+the latest live export. If another input filename changes, update it in
+`rf_input_files()` in `rf_trend/specification.R`.
 
 ## Outputs
 

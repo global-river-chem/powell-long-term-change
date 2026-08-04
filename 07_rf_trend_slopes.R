@@ -68,6 +68,10 @@ master_data_root <- paste0(
   "/Users/sidneybush/Library/CloudStorage/Box-Box/",
   "Sidney_Bush/SiSyn/spatial-data-extractions/master-datasets"
 )
+# Point this to the latest live Site_Reference_Table export
+site_reference_file <- file.path(
+  master_data_root, "Site_Reference_Table_20260730.csv"
+)
 # Keep these output paths unchanged to store results outside the repository
 run_output_root <- file.path(
   data_root, "rf_outputs", paste0(stability_bootstraps, "_bootstraps")
@@ -99,7 +103,7 @@ settings <- default_rf_settings(stability_bootstraps)
 
 # ---- Inputs and model definitions ----
 
-input_files <- rf_input_files(data_root, master_data_root)
+input_files <- rf_input_files(data_root, master_data_root, site_reference_file)
 missing_files <- input_files[!file.exists(input_files)]
 if (length(missing_files) > 0) {
   stop("Missing input files: ", paste(missing_files, collapse = ", "))

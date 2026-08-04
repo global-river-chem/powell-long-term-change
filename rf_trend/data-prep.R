@@ -33,6 +33,29 @@ harmonize_permafrost <- function(x) {
   100 * pmin(pmax(x, 0), 1)
 }
 
+# ---- Drainage areas ----
+
+build_drainage_areas <- function(input_files) {
+  wrtds_areas <- read.csv(input_files[["chemistry"]], check.names = FALSE) %>%
+    filter(chemical == "DSi") %>%
+    group_by(stream_key = normalize_stream_key(Stream_Name)) %>%
+    summarise(wrtds_drainage_area_km2 = median_or_na(drainSqKm))
+  live_areas <- read.csv(
+    input_files[["site_reference"]], check.names = FALSE
+  ) %>%
+    filter(tolower(trimws(Use_WRTDS)) == "yes") %>%
+    transmute(
+      stream_key = normalize_stream_key(Stream_Name),
+      live_drainage_area_km2 = numeric_or_na(drainSqKm)
+    )
+  # Convert existing yield slopes from the WRTDS area to the live area
+  left_join(wrtds_areas, live_areas, by = "stream_key") %>%
+    mutate(
+      drainage_area_correction_factor =
+        wrtds_drainage_area_km2 / live_drainage_area_km2
+    )
+}
+
 # ---- Lithology groups ----
 
 grl_lithology_cluster <- function(major_rock, sedimentary_fraction) {
@@ -196,7 +219,7 @@ build_raw_annual_nutrients <- function(path) {
     rename(N_raw = N, P_raw = P)
 }
 
-build_annual_chemistry_drivers <- function(path, raw_path) {
+build_annual_chemistry_drivers <- function(path, raw_path, drainage_areas) {
   chemistry <- read.csv(path, check.names = FALSE) %>%
     mutate(stream_key = normalize_stream_key(Stream_Name))
 
@@ -223,25 +246,34 @@ build_annual_chemistry_drivers <- function(path, raw_path) {
     )
 
   discharge <- chemistry %>%
+    left_join(
+      drainage_areas %>% select(stream_key, live_drainage_area_km2),
+      by = "stream_key"
+    ) %>%
     filter(
       chemical == "DSi",
       is.finite(Discharge_cms),
-      is.finite(drainSqKm),
-      drainSqKm > 0
+      is.finite(live_drainage_area_km2),
+      live_drainage_area_km2 > 0
     ) %>%
     group_by(stream_key, Year) %>%
     summarise(
-      qnorm = median(Discharge_cms / drainSqKm, na.rm = TRUE),
+      qnorm = median(
+        Discharge_cms / live_drainage_area_km2,
+        na.rm = TRUE
+      ),
       .groups = "drop"
     )
 
   full_join(nutrients, discharge, by = c("stream_key", "Year"))
 }
 
-build_annual_driver_table <- function(input_files) {
+build_annual_driver_table <- function(input_files, drainage_areas) {
   spatial <- build_spatial_annual_drivers(input_files[["spatial"]])
   chemistry <- build_annual_chemistry_drivers(
-    input_files[["chemistry"]], input_files[["raw_chemistry"]]
+    input_files[["chemistry"]],
+    input_files[["raw_chemistry"]],
+    drainage_areas
   )
   full_join(spatial, chemistry, by = c("stream_key", "Year"))
 }
@@ -339,21 +371,24 @@ build_site_predictors <- function(input_files, predictor_spec, settings) {
   environment_clusters <- build_environment_clusters(
     input_files[["environment_clusters"]]
   )
-  annual_drivers <- build_annual_driver_table(input_files)
+  drainage_areas <- build_drainage_areas(input_files)
+  annual_drivers <- build_annual_driver_table(input_files, drainage_areas)
   driver_summaries <- build_driver_summaries(
     annual_drivers, spatial$stream_key, settings
   )
 
   data <- spatial %>%
     left_join(environment_clusters, by = "stream_key") %>%
+    left_join(drainage_areas, by = "stream_key") %>%
     left_join(driver_summaries$values, by = "stream_key") %>%
     select(
       stream_key, Stream_Name_spatial, LTER_spatial,
       major_rock, final_cluster, environment_cluster,
       environment_cluster_name,
+      drainage_area_correction_factor,
       predictor_start_year, predictor_end_year, predictor_years,
       all_of(predictor_spec$candidates)
-  )
+    )
 
   list(data = data, trend_coverage = driver_summaries$coverage)
 }
@@ -376,6 +411,10 @@ prepare_model_data <- function(slopes, site_predictors, spec,
                                predictor_spec) {
   matched_data <- slopes %>%
     inner_join(site_predictors$data, by = "stream_key")
+  if (identical(spec$data_type, "yield")) {
+    matched_data$response <- matched_data$response *
+      matched_data$drainage_area_correction_factor
+  }
   candidates <- predictor_spec$candidates
   missing_fraction <- vapply(
     matched_data[candidates],
@@ -390,7 +429,8 @@ prepare_model_data <- function(slopes, site_predictors, spec,
   missing_matrix <- !is.finite(
     as.matrix(matched_data[predictor_sets$average_plus_trends])
   )
-  complete_rows <- rowSums(missing_matrix) == 0
+  complete_rows <- rowSums(missing_matrix) == 0 &
+    is.finite(matched_data$response)
   excluded_sites <- matched_data[!complete_rows, ] %>%
     transmute(
       stream_key,

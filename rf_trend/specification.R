@@ -10,7 +10,7 @@ default_rf_settings <- function(stability_iterations = 100L) {
   }
 
   list(
-    analysis_version = "si_slopes_v14_full_stability",
+    analysis_version = "si_slopes_v15_live_drainage_area",
     seed = 666L,
     # Annual predictors are summarized over this fixed period
     analysis_start_year = 2002L,
@@ -42,7 +42,7 @@ default_rf_settings <- function(stability_iterations = 100L) {
 # ---- Input files ----
 
 # Change a filename here only if a shared input file is renamed
-rf_input_files <- function(data_root, master_data_root) {
+rf_input_files <- function(data_root, master_data_root, site_reference_file) {
   c(
     concentration = file.path(data_root, "data", "conc_slopes_export.csv"),
     yield = file.path(data_root, "data", "yield_slopes_export.csv"),
@@ -55,6 +55,7 @@ rf_input_files <- function(data_root, master_data_root) {
     raw_chemistry = file.path(
       master_data_root, "20260105_masterdata_chem.csv"
     ),
+    site_reference = site_reference_file,
     environment_clusters = file.path(
       data_root, "data", "Si_sites_clusters_six_names.csv"
     )
