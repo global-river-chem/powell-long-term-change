@@ -47,6 +47,15 @@ clean_text <- function(x) {
   x
 }
 
+# Use one project name when the input files use different labels
+clean_lter_name <- function(x) {
+  x <- clean_text(x)
+  x[tolower(x) %in% c("swedish goverment", "swedish government", "sweden")] <- "Sweden"
+  x[tolower(x) == "cameroon"] <- "Congo Basin"
+  x[tolower(x) == "eastriversfa"] <- "Coal Creek"
+  x
+}
+
 # Apply known stream-name differences between the two input files
 clean_stream_name <- function(x) {
   x <- clean_text(x)
@@ -59,13 +68,28 @@ clean_stream_name <- function(x) {
     "MGWEIR" = "MG_WEIR",
     "ORlow" = "OR_low",
     "OR_WEIR" = "OR_low",
+    "coal_11" = "Coal Creek",
     .default = x
   )
+}
+
+# Ignore capitalization, spaces, accents, and punctuation when matching names
+match_key <- function(x) {
+  x <- iconv(clean_text(x), to = "ASCII//TRANSLIT")
+  x <- tolower(x)
+  gsub("[^a-z0-9]+", "", x)
+}
+
+parse_coordinate <- function(x) {
+  x <- gsub("\u2212", "-", as.character(x), fixed = TRUE)
+  suppressWarnings(as.numeric(x))
 }
 
 # Use each site location to choose a regional HydroRIVERS file
 hydrorivers_region <- function(latitude, longitude) {
   dplyr::case_when(
+    !is.finite(latitude) | !is.finite(longitude) ~ NA_character_,
+    !between(latitude, -90, 90) | !between(longitude, -180, 180) ~ NA_character_,
     latitude < -60 ~ NA_character_,
     latitude >= 58 & longitude >= -75 & longitude <= -5 ~ "gr",
     latitude >= 60 & longitude < -50 ~ "ar",
@@ -82,28 +106,47 @@ hydrorivers_region <- function(latitude, longitude) {
 }
 
 
-# 1. Read the site data ----------------------------------------------------
+# Read the site data -------------------------------------------------------
 
 spatial_raw <- read.csv(spatial_file, check.names = TRUE)
 site_reference_raw <- read.csv(site_reference_file, check.names = TRUE)
 
 sites <- spatial_raw %>%
   transmute(
-    LTER = clean_text(LTER),
+    LTER = clean_lter_name(LTER),
     Stream_Name = clean_stream_name(Stream_Name),
     Discharge_File_Name = clean_text(Discharge_File_Name),
-    reference_drainage_area_km2 = suppressWarnings(as.numeric(drainage_area))
+    reference_drainage_area_km2 = suppressWarnings(as.numeric(drainage_area)),
+    lter_key = match_key(LTER),
+    stream_key = match_key(Stream_Name),
+    discharge_key = match_key(Discharge_File_Name)
   )
 
 site_coordinates <- site_reference_raw %>%
   transmute(
-    LTER = clean_text(LTER),
+    LTER = clean_lter_name(LTER),
     Stream_Name = clean_stream_name(Stream_Name),
     Discharge_File_Name = clean_text(Discharge_File_Name),
-    Latitude = suppressWarnings(as.numeric(Latitude)),
-    Longitude = suppressWarnings(as.numeric(Longitude))
+    Latitude = parse_coordinate(Latitude),
+    Longitude = parse_coordinate(Longitude),
+    lter_key = match_key(LTER),
+    stream_key = match_key(Stream_Name),
+    discharge_key = match_key(Discharge_File_Name)
   ) %>%
   mutate(
+    # Correct source-table coordinates confirmed from site records
+    Latitude = case_when(
+      LTER == "PIE" & Stream_Name == "Aberjona" ~ 42.4474568,
+      LTER == "HYBAM" & tolower(Stream_Name) == "labrea" ~ -7.254421,
+      LTER == "Sweden" & Stream_Name == "Raan Helsingborg" ~ 55.99957,
+      TRUE ~ Latitude
+    ),
+    Longitude = case_when(
+      LTER == "PIE" & Stream_Name == "Aberjona" ~ -71.1380816,
+      LTER == "HYBAM" & tolower(Stream_Name) == "labrea" ~ -64.801287,
+      LTER == "Sweden" & Stream_Name == "Raan Helsingborg" ~ 12.77950,
+      TRUE ~ Longitude
+    ),
     region_as_supplied = hydrorivers_region(Latitude, Longitude),
     region_if_swapped = hydrorivers_region(Longitude, Latitude),
     swap_coordinates =
@@ -116,8 +159,9 @@ site_coordinates <- site_reference_raw %>%
 
 invalid_coordinates <- site_coordinates %>%
   filter(
-    !is.finite(Latitude) | !is.finite(Longitude) |
-      !between(Latitude, -90, 90) | !between(Longitude, -180, 180)
+    is.finite(Latitude),
+    is.finite(Longitude),
+    !between(Latitude, -90, 90) | !between(Longitude, -180, 180)
   )
 
 valid_coordinates <- site_coordinates %>%
@@ -129,56 +173,109 @@ valid_coordinates <- site_coordinates %>%
   )
 
 
-# 2. Add latitude and longitude to each site ------------------------------
+# Add latitude and longitude to each site ---------------------------------
 
-# Most rows match by LTER and stream name
-stream_coordinates <- valid_coordinates %>%
-  filter(!is.na(LTER), !is.na(Stream_Name)) %>%
+# Use an exact name first when the reference table contains similar site names
+exact_stream_coordinates <- valid_coordinates %>%
+  filter(!is.na(lter_key), !is.na(Stream_Name)) %>%
   mutate(coordinate = paste(Latitude, Longitude)) %>%
-  group_by(LTER, Stream_Name) %>%
+  group_by(lter_key, Stream_Name) %>%
   filter(n_distinct(coordinate) == 1) %>%
   slice(1) %>%
   ungroup() %>%
   select(
-    LTER,
+    lter_key,
     Stream_Name,
+    exact_stream_latitude = Latitude,
+    exact_stream_longitude = Longitude
+  )
+
+exact_discharge_coordinates <- valid_coordinates %>%
+  filter(!is.na(lter_key), !is.na(Discharge_File_Name)) %>%
+  mutate(coordinate = paste(Latitude, Longitude)) %>%
+  group_by(lter_key, Discharge_File_Name) %>%
+  filter(n_distinct(coordinate) == 1) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(
+    lter_key,
+    Discharge_File_Name,
+    exact_discharge_latitude = Latitude,
+    exact_discharge_longitude = Longitude
+  )
+
+# Match remaining rows after standardizing capitalization and punctuation
+stream_coordinates <- valid_coordinates %>%
+  filter(!is.na(lter_key), !is.na(stream_key)) %>%
+  mutate(coordinate = paste(Latitude, Longitude)) %>%
+  group_by(lter_key, stream_key) %>%
+  filter(n_distinct(coordinate) == 1) %>%
+  slice(1) %>%
+  ungroup() %>%
+  select(
+    lter_key,
+    stream_key,
     stream_latitude = Latitude,
     stream_longitude = Longitude
   )
 
-# Match the remaining sites by LTER and discharge file name
-# Some blank discharge file names share one coordinate
 discharge_coordinates <- valid_coordinates %>%
-  filter(!is.na(LTER)) %>%
+  filter(!is.na(lter_key), !is.na(discharge_key)) %>%
   mutate(coordinate = paste(Latitude, Longitude)) %>%
-  group_by(LTER, Discharge_File_Name) %>%
+  group_by(lter_key, discharge_key) %>%
   filter(n_distinct(coordinate) == 1) %>%
   slice(1) %>%
   ungroup() %>%
   select(
-    LTER,
-    Discharge_File_Name,
+    lter_key,
+    discharge_key,
     discharge_latitude = Latitude,
     discharge_longitude = Longitude
   )
 
 sites <- sites %>%
   left_join(
+    exact_stream_coordinates,
+    by = c("lter_key", "Stream_Name"),
+    na_matches = "never"
+  ) %>%
+  left_join(
+    exact_discharge_coordinates,
+    by = c("lter_key", "Discharge_File_Name"),
+    na_matches = "never"
+  ) %>%
+  left_join(
     stream_coordinates,
-    by = c("LTER", "Stream_Name"),
+    by = c("lter_key", "stream_key"),
     na_matches = "never"
   ) %>%
   left_join(
     discharge_coordinates,
-    by = c("LTER", "Discharge_File_Name"),
-    na_matches = "na"
+    by = c("lter_key", "discharge_key"),
+    na_matches = "never"
   ) %>%
   mutate(
-    Latitude = coalesce(stream_latitude, discharge_latitude),
-    Longitude = coalesce(stream_longitude, discharge_longitude),
+    Latitude = coalesce(
+      exact_stream_latitude,
+      exact_discharge_latitude,
+      stream_latitude,
+      discharge_latitude
+    ),
+    Longitude = coalesce(
+      exact_stream_longitude,
+      exact_discharge_longitude,
+      stream_longitude,
+      discharge_longitude
+    ),
     hydrorivers_region = hydrorivers_region(Latitude, Longitude)
   ) %>%
-  select(-stream_latitude, -stream_longitude, -discharge_latitude, -discharge_longitude)
+  select(
+    -lter_key,
+    -stream_key,
+    -discharge_key,
+    -ends_with("_latitude"),
+    -ends_with("_longitude")
+  )
 
 missing_coordinates <- sites %>%
   filter(!is.finite(Latitude) | !is.finite(Longitude))
@@ -190,7 +287,7 @@ sites_to_match <- sites %>%
   filter(!is.na(hydrorivers_region))
 
 
-# 3. Match the sites to the nearest HydroRIVERS segment -------------------
+# Match the sites to the nearest HydroRIVERS segment ----------------------
 
 # HydroRIVERS is distributed in regional files, so each region is read once
 region_results <- list()
@@ -304,7 +401,7 @@ site_metrics <- bind_rows(region_results) %>%
   )
 
 
-# 4. Compare possible definitions of a near-mouth site --------------------
+# Compare possible definitions of a near-mouth site -----------------------
 
 has_distance_and_coverage <- site_metrics$drains_to_ocean &
   is.finite(site_metrics$downstream_to_ocean_km) &
@@ -332,7 +429,7 @@ cutoff_comparison <- expand.grid(
   arrange(distance_cutoff_km, basin_coverage_cutoff)
 
 
-# 5. Save sites that need a coordinate or matching review -----------------
+# Save sites that need a coordinate or matching review --------------------
 
 large_snap_distance <- site_metrics %>%
   filter(snap_distance_km > snap_distance_to_review_km)
@@ -378,7 +475,7 @@ sites_needing_review <- bind_rows(
   distinct()
 
 
-# 6. Save the output files -------------------------------------------------
+# Save the output files ----------------------------------------------------
 
 write.csv(
   site_metrics,

@@ -18,15 +18,18 @@ The analysis uses:
 - `Site_Reference_Table - WRTDS_Reference_Table_LTER_V3.csv`, for site coordinates
 - HydroRIVERS version 1.0, for the river network and connected drainage areas
 
-Project inputs are stored in Box under `SiSyn/long-term-change/data` and mirrored in the [shared Google Drive data folder](https://drive.google.com/drive/folders/1F16i4-dMvIvd_jTHKKnbdJALGa4PSPOJ).
+The full site-reference table contains 980 rows. The coordinate check corrects identifiable latitude-longitude reversals, confirmed source-coordinate errors, and naming differences before joining it to the 543 sites in the current spatial dataset.
+
+Project inputs are available in the [shared Google Drive data folder](https://drive.google.com/drive/folders/1F16i4-dMvIvd_jTHKKnbdJALGa4PSPOJ).
 
 Current results:
 
 - 543 sites across 32 LTER or project groups were included in the spatial input
-- 446 sites were matched to HydroRIVERS
-- 442 matched sites drain to the ocean
+- 528 sites were matched to HydroRIVERS
+- 524 matched sites drain to the ocean
 - 4 matched sites drain to inland basins
-- Depending on the distance and basin-coverage cutoffs, 36 to 69 sites qualify as near-mouth, high-coverage sites
+- 15 MCM sites fall outside HydroRIVERS coverage
+- Depending on the distance and basin-coverage cutoffs, 58 to 96 sites qualify as near-mouth, high-coverage sites
 
 The cutoff comparison tests all combinations of:
 
@@ -38,10 +41,6 @@ The cutoff comparison tests all combinations of:
 - **All matched sites:** Use for network-position analyses and site-level WRTDS flux analyses
 - **Ocean-connected sites:** Use to assess potential downstream silica transport
 - **Near-mouth, high-coverage sites:** Use when a station needs to serve as a possible estimate of flux near the ocean
-
-## Future Work
-
-Network position could later be compared with WRTDS flux estimates. McNicol et al. (2023) provides background for that analysis.
 
 ## Files
 
@@ -84,7 +83,7 @@ One row for each of the 12 distance and basin-coverage combinations.
 
 ### `network_position_sites_needing_review.csv`
 
-Rows that could not be included cleanly or need a coordinate check. A site may appear more than once if it has more than one issue.
+Rows from the current spatial dataset that could not be included cleanly. The current file contains the 15 MCM sites outside HydroRIVERS coverage.
 
 | Column | Meaning |
 |---|---|
