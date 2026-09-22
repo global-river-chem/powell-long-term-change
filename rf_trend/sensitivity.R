@@ -15,6 +15,10 @@ run_split_sensitivity <- function(prepared, spec, settings, model_index,
     result <- readRDS(result_path)
     if (
       identical(result$analysis_version, settings$analysis_version) &&
+      identical(
+        result$site_reference_hash,
+        settings$site_reference_hash
+      ) &&
       identical(result$stratification_methods, settings$sensitivity_strata) &&
       identical(
         result$sensitivity_design_version,
@@ -93,6 +97,7 @@ run_split_sensitivity <- function(prepared, spec, settings, model_index,
   metrics <- bind_rows(metrics_list)
   result <- list(
     analysis_version = settings$analysis_version,
+    site_reference_hash = settings$site_reference_hash,
     specification = spec,
     predictor_set = predictor_set,
     stratification_methods = settings$sensitivity_strata,

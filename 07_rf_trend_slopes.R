@@ -63,14 +63,17 @@ data_root <- paste0(
   "/Users/sidneybush/Library/CloudStorage/Box-Box/",
   "Sidney_Bush/SiSyn/long-term-change"
 )
-# Change this to the folder containing both annual chemistry input files
-master_data_root <- paste0(
+# change this if the raw chemistry release is stored elsewhere
+raw_chemistry_file <- paste0(
   "/Users/sidneybush/Library/CloudStorage/Box-Box/",
-  "Sidney_Bush/SiSyn/spatial-data-extractions/master-datasets"
+  "Sidney_Bush/SiSyn/chemistry-discharge-qaqc/",
+  "archive/releases/2026/20260105_masterdata_chem.csv"
 )
-# Point this to the latest live Site_Reference_Table export
-site_reference_file <- file.path(
-  master_data_root, "Site_Reference_Table_20260730.csv"
+# live site-reference table
+site_reference_url <- paste0(
+  "https://docs.google.com/spreadsheets/d/",
+  "11t9YYTzN_T12VAQhHuY5TpVjGS50ymNmKznJK4rKTIU/",
+  "export?format=csv&gid=357814834"
 )
 # Keep these output paths unchanged to store results outside the repository
 run_output_root <- file.path(
@@ -103,7 +106,17 @@ settings <- default_rf_settings(stability_bootstraps)
 
 # ---- Inputs and model definitions ----
 
-input_files <- rf_input_files(data_root, master_data_root, site_reference_file)
+# download the live table once for this run
+site_reference_file <- tempfile(fileext = ".csv")
+download.file(
+  site_reference_url, site_reference_file, mode = "wb", quiet = TRUE
+)
+settings$site_reference_hash <- unname(
+  tools::md5sum(site_reference_file)
+)
+input_files <- rf_input_files(
+  data_root, raw_chemistry_file, site_reference_file
+)
 missing_files <- input_files[!file.exists(input_files)]
 if (length(missing_files) > 0) {
   stop("Missing input files: ", paste(missing_files, collapse = ", "))
@@ -127,6 +140,7 @@ site_predictors <- build_site_predictors(
   predictor_spec,
   settings
 )
+unlink(site_reference_file)
 prepared_models <- lapply(seq_len(nrow(model_specs)), function(i) {
   spec <- model_specs[i, ]
   slopes <- load_slope_response(

@@ -8,17 +8,17 @@ This is not a straight-line distance to the coastline. Each site is matched to t
 
 ## Script
 
-`06_network-position.R` reads the two project input files, downloads any missing regional HydroRIVERS files, and writes three CSV files to `outputs/network-position`. A run takes roughly 10–15 minutes when the HydroRIVERS files are already downloaded.
+`06_network-position.R` reads the project inputs, downloads any missing regional HydroRIVERS files, and writes three CSV files to `outputs/network-position`. A run takes roughly 10–15 minutes when the HydroRIVERS files are already downloaded.
 
 ## Current Analysis
 
 The analysis uses:
 
 - `all-data_si-extract_3_20260629.csv`, the current all-site spatial dataset
-- `Site_Reference_Table - WRTDS_Reference_Table_LTER_V3.csv`, for site coordinates
+- the live [Site Reference Table](https://docs.google.com/spreadsheets/d/11t9YYTzN_T12VAQhHuY5TpVjGS50ymNmKznJK4rKTIU/edit?gid=357814834), for site coordinates
 - HydroRIVERS version 1.0, for the river network and connected drainage areas
 
-The full site-reference table contains 980 rows. The coordinate check corrects identifiable latitude-longitude reversals, confirmed source-coordinate errors, and naming differences before joining it to the 543 sites in the current spatial dataset.
+The script reads the live table directly from Google Sheets on every run. The coordinate check corrects identifiable latitude-longitude reversals, confirmed source-coordinate errors, and naming differences before joining it to the current spatial dataset.
 
 Project inputs are available in the [shared Google Drive data folder](https://drive.google.com/drive/folders/1F16i4-dMvIvd_jTHKKnbdJALGa4PSPOJ).
 

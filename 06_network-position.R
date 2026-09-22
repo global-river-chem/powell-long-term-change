@@ -16,10 +16,10 @@ spatial_file <- file.path(
   "all-data_si-extract_3_20260629.csv"
 )
 
-site_reference_file <- file.path(
-  project_folder,
-  "data",
-  "Site_Reference_Table - WRTDS_Reference_Table_LTER_V3.csv"
+site_reference_url <- paste0(
+  "https://docs.google.com/spreadsheets/d/",
+  "11t9YYTzN_T12VAQhHuY5TpVjGS50ymNmKznJK4rKTIU/",
+  "export?format=csv&gid=357814834"
 )
 
 hydrorivers_folder <- file.path(project_folder, "data", "hydrorivers")
@@ -29,8 +29,8 @@ distance_cutoffs_km <- c(10, 25, 50, 100)
 basin_coverage_cutoffs <- c(0.80, 0.90, 0.95)
 snap_distance_to_review_km <- 10
 
-if (!file.exists(spatial_file) || !file.exists(site_reference_file)) {
-  stop("The spatial or site-reference input file is missing", call. = FALSE)
+if (!file.exists(spatial_file)) {
+  stop("The spatial input file is missing", call. = FALSE)
 }
 
 dir.create(hydrorivers_folder, recursive = TRUE, showWarnings = FALSE)
@@ -109,7 +109,7 @@ hydrorivers_region <- function(latitude, longitude) {
 # Read the site data -------------------------------------------------------
 
 spatial_raw <- read.csv(spatial_file, check.names = TRUE)
-site_reference_raw <- read.csv(site_reference_file, check.names = TRUE)
+site_reference_raw <- read.csv(site_reference_url, check.names = TRUE)
 
 sites <- spatial_raw %>%
   transmute(

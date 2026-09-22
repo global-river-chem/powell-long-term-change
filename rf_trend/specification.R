@@ -42,7 +42,8 @@ default_rf_settings <- function(stability_iterations = 100L) {
 # ---- Input files ----
 
 # Change a filename here only if a shared input file is renamed
-rf_input_files <- function(data_root, master_data_root, site_reference_file) {
+rf_input_files <- function(data_root, raw_chemistry_file,
+                           site_reference_file) {
   c(
     concentration = file.path(data_root, "data", "conc_slopes_export.csv"),
     yield = file.path(data_root, "data", "yield_slopes_export.csv"),
@@ -50,11 +51,9 @@ rf_input_files <- function(data_root, master_data_root, site_reference_file) {
       data_root, "data", "all-data_si-extract_3_20260629.csv"
     ),
     chemistry = file.path(
-      master_data_root, "Full_Results_WRTDS_kalman_annual.csv"
+      data_root, "data", "Full_Results_WRTDS_kalman_annual.csv"
     ),
-    raw_chemistry = file.path(
-      master_data_root, "20260105_masterdata_chem.csv"
-    ),
+    raw_chemistry = raw_chemistry_file,
     site_reference = site_reference_file,
     environment_clusters = file.path(
       data_root, "data", "Si_sites_clusters_six_names.csv"

@@ -40,14 +40,20 @@ build_drainage_areas <- function(input_files) {
     filter(chemical == "DSi") %>%
     group_by(stream_key = normalize_stream_key(Stream_Name)) %>%
     summarise(wrtds_drainage_area_km2 = median_or_na(drainSqKm))
-  live_areas <- read.csv(
+  site_reference <- read.csv(
     input_files[["site_reference"]], check.names = FALSE
   ) %>%
-    filter(tolower(trimws(Use_WRTDS)) == "yes") %>%
+    filter(tolower(trimws(Use_WRTDS)) == "yes")
+  live_areas <- bind_rows(
+    site_reference %>% transmute(site_name = Stream_Name, drainSqKm),
+    site_reference %>% transmute(site_name = Alt_Stream_Name, drainSqKm)
+  ) %>%
+    filter(!is.na(site_name), nzchar(trimws(site_name))) %>%
     transmute(
-      stream_key = normalize_stream_key(Stream_Name),
+      stream_key = normalize_stream_key(site_name),
       live_drainage_area_km2 = numeric_or_na(drainSqKm)
-    )
+    ) %>%
+    distinct()
   # Convert existing yield slopes from the WRTDS area to the live area
   left_join(wrtds_areas, live_areas, by = "stream_key") %>%
     mutate(

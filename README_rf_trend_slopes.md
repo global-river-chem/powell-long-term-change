@@ -12,17 +12,15 @@ Run `07_rf_trend_slopes.R` from the repository root.
 Before running:
 
 - change `data_root` to the local `long-term-change` folder
-- change `master_data_root` to the local `master-datasets` folder
-- export the current live site-reference table and set `site_reference_file` to
-  that export
+- change `raw_chemistry_file` if the raw chemistry release is stored elsewhere
 - use `stability_bootstraps <- 10L` for a quick trial or `100L` for a full run
 - leave `make_plots <- TRUE` to create the three final plots
 - set `refit_models <- TRUE` after changing data or model settings
 - set `refit_models <- FALSE` to reuse matching saved results and recreate plots
 
-The path comments near the top of the main script show which folders and live
-export to change. Other input filenames are defined in
-`rf_trend/specification.R`.
+The path comments near the top of the main script show which folders to change.
+The live site-reference table is read directly from Google Sheets. Other input
+filenames are defined in `rf_trend/specification.R`.
 
 ## First-time setup
 
@@ -112,10 +110,12 @@ a five-year model.
 
 ## Drainage areas
 
-Specific discharge uses `drainSqKm` from active WRTDS rows in the latest live
-site-reference export. Supplied yield slopes are rescaled by `old area / live
-area`, which changes magnitude but not sign or significance. Lower Atchafalaya
-is excluded because its area is undetermined.
+Specific discharge uses `drainSqKm` from active WRTDS rows in the live Site
+Reference Table. The table is downloaded to a temporary file at the start of
+each run, and a changed table invalidates saved model results. Supplied yield
+slopes are rescaled by `old area / live area`, which changes magnitude but not
+sign or significance. Lower Atchafalaya is excluded because its area is
+undetermined.
 
 ## N and P
 
@@ -244,8 +244,7 @@ final performance, SHAP, or sensitivity results until the full refit finishes.
 Kathi Jo supplied the concentration and yield slope exports and the
 environmental-cluster data through the [shared Google Drive results
 folder](https://drive.google.com/drive/u/1/folders/10HMZLr9TAf2asrprZMyyuiYlIesm4Jug).
-The workflow reads local copies and does not download directly from Google
-Drive.
+The workflow reads local copies of these three files.
 
 The results folder provides:
 
@@ -259,8 +258,11 @@ needs these additional inputs:
 
 - `all-data_si-extract_3_20260629.csv`
 - `Full_Results_WRTDS_kalman_annual.csv`
-- the latest export of the live `Site_Reference_Table`
 - `20260105_masterdata_chem.csv`
+
+Drainage areas come directly from the live [Site Reference
+Table](https://docs.google.com/spreadsheets/d/11t9YYTzN_T12VAQhHuY5TpVjGS50ymNmKznJK4rKTIU/edit?gid=357814834)
+on every run.
 
 The last file supplies raw NO3, NOx, SRP, and PO4 observations used when an
 annual WRTDS nutrient value is missing.
@@ -274,18 +276,16 @@ SiSyn/
 │       ├── conc_slopes_export.csv
 │       ├── yield_slopes_export.csv
 │       ├── all-data_si-extract_3_20260629.csv
+│       ├── Full_Results_WRTDS_kalman_annual.csv
 │       └── Si_sites_clusters_six_names.csv
-└── spatial-data-extractions/
-    └── master-datasets/
-        ├── Full_Results_WRTDS_kalman_annual.csv
-        ├── 20260105_masterdata_chem.csv
-        └── Site_Reference_Table_YYYYMMDD.csv
+└── chemistry-discharge-qaqc/
+    └── archive/releases/2026/
+        └── 20260105_masterdata_chem.csv
 ```
 
 If the local files use different folders, change `data_root` and
-`master_data_root` in `07_rf_trend_slopes.R`. Set `site_reference_file` there to
-the latest live export. If another input filename changes, update it in
-`rf_input_files()` in `rf_trend/specification.R`.
+`raw_chemistry_file` in `07_rf_trend_slopes.R`. If another input filename
+changes, update it in `rf_input_files()` in `rf_trend/specification.R`.
 
 ## Outputs
 

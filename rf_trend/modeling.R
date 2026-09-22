@@ -89,7 +89,10 @@ fit_slope_model <- function(prepared, spec, predictor_set, settings,
 
   if (file.exists(result_path) && !refit_models) {
     result <- readRDS(result_path)
-    if (identical(result$analysis_version, settings$analysis_version)) {
+    if (
+      identical(result$analysis_version, settings$analysis_version) &&
+      identical(result$settings, settings)
+    ) {
       message("Using saved model: ", spec$model_id, " / ", predictor_set)
       return(result)
     }
