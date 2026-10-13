@@ -1,181 +1,176 @@
-## evaluate overlapping site years - draft code
 
-library(tidyverse)
-library(trend)
-library(viridis)
-library(googledrive)
-library(ggridges)
-library(cowplot)
-library(viridis)
-library(sf)
-library(mapview)
+
+library(dplyr)
+library(tidyr)
 library(purrr)
 library(lubridate)
-#install.packages("igraph") # if needed
-library(igraph)
 
-# directory for downloading files from google drive
-(path <- scicomptools::wd_loc(local = FALSE, remote_path = file.path('/', "home","jankowski","data")))
-
-# directory for accessing WRTDS results
-(path_2 <- scicomptools::wd_loc(local = FALSE, remote_path = file.path('/', "home", "shares", "lter-si", "WRTDS","WRTDS Results_2025")))
-
-# Data import -------------------------------------------------------------
-
-## Reference table
-ref_link<-"https://drive.google.com/file/d/1u4yNGOFOVKfQoEak7z9ovkFhtAm9XRE_/view?usp=drive_link"
-ref_folder = drive_get(as_id(ref_link))
-ref <- drive_download(file = ref_folder$id, path = file.path(path,"Site_Reference_Table.csv"), overwrite = T)
-ref_dat<-read_csv(ref$local_path)
-
-# Annual data - generalized flow normalization 
-annual_dat <- read.csv(file.path(path_2, "Full_Results_WRTDS_annual.csv"))
-kalman_dat <- read.csv(file.path(path_2, "Full_Results_WRTDS_kalman_annual.csv"))
+# ============================================================
+# SETTINGS
+# ============================================================
+window_length     <- 15  # length of the period, in years
+min_years_sampled <- 12  # minimum sampled years required within that period
+max_gap_years     <- 2   # longest allowed gap between consecutive sampled
+# years within the window (e.g. 3 = no more than
+# 3 years in a row with no sample)
 
 
-# Evaluate overlapping records --------------------------------------------
+# ============================================================
+# STEP 1: Get distinct sampled years per site
+# Replace `raw` with your real long-format data (site_id, date)
+# ============================================================
 
-## OPTION A - one row with just start/end date. Data has no gaps.
-# Function: years of overlap between two date ranges (0 if none)
+raw <- data.frame(
+  site_id = c(rep("A", 18), rep("B", 15), rep("C", 10), rep("D", 20)),
+  date = as.Date(c(
+    seq(as.Date("2000-01-01"), as.Date("2019-01-01"), by = "year")[1:18],
+    seq(as.Date("1998-01-01"), as.Date("2015-01-01"), by = "year")[1:15],
+    seq(as.Date("1985-01-01"), as.Date("1996-01-01"), by = "year")[1:10],
+    seq(as.Date("2001-01-01"), as.Date("2022-01-01"), by = "year")[1:20]
+  ))
+)
 
-# Set up dataframe - select for one or more chemicals
-df <- duration_dat %>% filter(chemical=="DSi")
-colnames(df) <- c("Stream_Name","chemical","LTER","start_date","end_date","duration")
+raw <- annual_dat %>% 
+  # used to select streams that had 20 year records for Si, N and P
+  #filter(Stream_Name %in% long_dat$Stream_Name) %>% 
+  mutate(chemical = case_when(chemical == "NO3" ~ "NO3",
+                              chemical == "NOx" ~ "NO3", 
+                              .default = chemical)) %>% 
+  filter(chemical == "P") %>%
+  select(Stream_Name,Year,Conc_mgL) %>% 
+  rename(site_id = Stream_Name,
+         year = Year)
 
-overlap_years <- function(start1, end1, start2, end2) {
-  ov_start <- pmax(start1, start2)
-  ov_end   <- pmin(end1, end2)
-  ov_years  <- as.numeric(ov_end - ov_start)
-  ifelse(ov_years <= 0, 0, ov_years)
+site_years <- raw %>%
+  #mutate(year = year(date)) %>%
+  distinct(site_id, year)
+
+
+# ============================================================
+# STEP 2: Build a site x year matrix (1 = sampled, 0 = not)
+# Columns cover the FULL year range across the whole dataset,
+# so windows can be evaluated consistently
+# ============================================================
+
+full_year_range <- seq(min(site_years$year), max(site_years$year))
+
+year_matrix <- site_years %>%
+  mutate(sampled = 1L) %>%
+  pivot_wider(names_from = year, values_from = sampled, values_fill = 0L)
+
+# Ensure every year in the full range has a column, even if no site
+# has any samples that year (fills with 0)
+missing_yr_cols <- setdiff(as.character(full_year_range), names(year_matrix))
+for (yr in missing_yr_cols) year_matrix[[yr]] <- 0L
+
+sites <- year_matrix$site_id
+mat   <- as.matrix(year_matrix[, as.character(full_year_range)])
+rownames(mat) <- sites
+
+
+# ============================================================
+# STEP 3: Slide a window of length `window_length` across the
+# full year range. For each window, a site qualifies if it has
+# >= min_years_sampled sampled years WITHIN that window, AND no
+# gap between consecutive sampled years longer than max_gap_years.
+# ============================================================
+
+# Helper: given a window's start/end years and a site's sampled years
+# within that window, return the longest internal gap, the leading gap
+# (window start -> first sample), and the trailing gap (last sample ->
+# window end). All three must be checked against max_gap_years.
+gap_stats <- function(window_start, window_end, years) {
+  if (length(years) == 0) {
+    return(list(internal_gap = Inf, leading_gap = Inf, trailing_gap = Inf))
+  }
+  years <- sort(years)
+  internal_gap <- if (length(years) > 1) max(diff(years) - 1) else 0
+  leading_gap  <- years[1] - window_start
+  trailing_gap <- window_end - years[length(years)]
+  list(internal_gap = internal_gap, leading_gap = leading_gap, trailing_gap = trailing_gap)
 }
 
-# All pairwise combinations of sites
-pairs <- combn(df$Stream_Name, 2, simplify = FALSE)
-glimpse(pairs)
+possible_starts <- full_year_range[1]:(tail(full_year_range, 1) - window_length + 1)
 
-# look across all pairs to see which have overlapping years
-overlap_df <- map_dfr(pairs, function(p) {
-  s1 <- filter(df, Stream_Name == p[1])
-  s2 <- filter(df, Stream_Name == p[2])
+window_results <- map_dfr(possible_starts, function(start_yr) {
+  end_yr <- start_yr + window_length - 1
+  window_cols <- as.character(start_yr:end_yr)
+  window_cols <- window_cols[window_cols %in% colnames(mat)]
+  window_yrs_numeric <- as.numeric(window_cols)
+  
+  # per-site count of sampled years, and gap checks (internal + edges)
+  site_stats <- map_dfr(sites, function(s) {
+    sampled_yrs_in_window <- window_yrs_numeric[mat[s, window_cols] == 1]
+    g <- gap_stats(start_yr, end_yr, sampled_yrs_in_window)
+    tibble(
+      site_id = s,
+      n_sampled     = length(sampled_yrs_in_window),
+      internal_gap  = g$internal_gap,
+      leading_gap   = g$leading_gap,
+      trailing_gap  = g$trailing_gap
+    )
+  })
+  
+  qualifying <- site_stats %>%
+    filter(n_sampled >= min_years_sampled,
+           internal_gap <= max_gap_years,
+           leading_gap  <= max_gap_years,
+           trailing_gap <= max_gap_years) %>%
+    pull(site_id)
+  
   tibble(
-    site1 = p[1],
-    site2 = p[2],
-    overlap_years = overlap_years(s1$start_date, s1$end_date,
-                                  s2$start_date, s2$end_date)
+    window_start     = start_yr,
+    window_end       = end_yr,
+    n_qualifying     = length(qualifying),
+    qualifying_sites = list(qualifying)
   )
 })
 
-overlap_df$overlap_years_2 <- overlap_df$overlap_years*365
-
-# Keep only pairs with at least 15 years of overlap
-overlap_15 <- overlap_df %>% filter(overlap_years_2 >= 15)
-print(overlap_15)
-
-# Which individual sites have at least one qualifying partner?
-sites_with_overlap <- unique(c(overlap_15$site1, overlap_15$site2))
-df_screened <- df %>% filter(site_id %in% sites_with_overlap)
-print(df_screened)
+print(window_results %>% select(window_start, window_end, n_qualifying))
 
 
-## OPTION B - raw records, overlap based on actual sampled years, not just full time span
-raw <- annual_dat %>% filter(chemical=="DSi") %>% select(LTER,Stream_Name,Year,chemical)
+# ============================================================
+# STEP 4: Identify the best window(s) -- the one(s) with the
+# most qualifying sites. (There may be ties across adjacent or
+# distant windows -- all are shown.)
+# ============================================================
 
-#Get the set of sampled years per site
-site_years <- raw %>%
-  group_by(Stream_Name) %>%
-  summarise(years = list(unique(Year)), .groups = "drop")
+best_n <- max(window_results$n_qualifying)
+best_windows <- window_results %>% filter(n_qualifying == best_n)
 
-# Pairwise overlap = number of years both sites were sampled
-pairs_raw <- combn(site_years$Stream_Name, 2, simplify = FALSE)
+cat("Best window(s) found, with", best_n, "qualifying sites:\n")
+print(best_windows %>% select(window_start, window_end, n_qualifying))
 
-overlap_raw_df <- map_dfr(pairs_raw, function(p) {
-  y1 <- site_years$years[site_years$Stream_Name == p[1]][[1]]
-  y2 <- site_years$years[site_years$Stream_Name == p[2]][[1]]
-  shared <- sort(intersect(y1, y2))
+# View the qualifying sites for the (first) best window:
+best_windows$qualifying_sites[[1]]
+
+
+# ============================================================
+# OPTIONAL: full detail for the best window -- how many years
+# each qualifying site was actually sampled within it
+# ============================================================
+
+best_start <- best_windows$window_start[1]
+best_end   <- best_windows$window_end[1]
+best_cols  <- as.character(best_start:best_end)
+best_cols  <- best_cols[best_cols %in% colnames(mat)]
+best_cols_numeric <- as.numeric(best_cols)
+
+site_detail <- map_dfr(sites, function(s) {
+  sampled_yrs <- best_cols_numeric[mat[s, best_cols] == 1]
+  g <- gap_stats(best_start, best_end, sampled_yrs)
   tibble(
-    site1 = p[1],
-    site2 = p[2],
-    overlap_years = length(shared),
-    shared_years  = list(shared)   # the actual years both sites were sampled
+    site_id = s,
+    years_sampled_in_window = length(sampled_yrs),
+    internal_gap = g$internal_gap,
+    leading_gap  = g$leading_gap,
+    trailing_gap = g$trailing_gap
   )
-})
+}) %>%
+  filter(years_sampled_in_window >= min_years_sampled,
+         internal_gap <= max_gap_years,
+         leading_gap  <= max_gap_years,
+         trailing_gap <= max_gap_years) %>%
+  arrange(desc(years_sampled_in_window), internal_gap)
 
-overlap_raw_15 <- overlap_raw_df %>% filter(overlap_years >= 15)
-print(overlap_raw_15)
-
-# shared_years is a list-column (each cell holds a vector of years).
-# To view the actual years for one pair:
-overlap_raw_15$shared_years[[1]]
-
-# To "unnest" into a long format (one row per site-pair-year):
-overlap_raw_long <- overlap_raw_15 %>%
-  select(site1, site2, shared_years) %>%
-  unnest(shared_years) %>%
-  rename(year = shared_years)
-print(overlap_raw_long)
-
-
-
-
-
-# now filter out set of sites that all  have overlapping time period
-g <- graph_from_data_frame(overlap_raw_15[, c("site1", "site2")], directed = FALSE)
-
-# first need to check for "clique density"
-cat("Number of sites with >=1 qualifying overlap:", vcount(g), "\n")
-cat("Number of qualifying pairs (edges):", ecount(g), "\n")
-cat("Graph density (0 = sparse, 1 = fully connected):",
-    round(edge_density(g), 3), "\n")
-
-# Use max_cliques() rather than cliques():
-# - cliques() returns EVERY clique, including small ones nested inside
-#   bigger ones -- this is what explodes in dense graphs
-# - max_cliques() returns only MAXIMAL cliques (not contained in any
-#   larger qualifying group), which is almost always what you actually
-#   want, and is a far smaller, faster result
-max_cliques_15 <- max_cliques(g, min = 3)
-cat("Number of maximal cliques (size 3+) found:", length(max_cliques_15), "\n")
-print(max_cliques_15)
-
-# For each clique, find the years shared by ALL member sites
-# (requires site_years from Option B -- the actual sampled years per site)
-clique_shared_years <- map_dfr(seq_along(max_cliques_15), function(i) {
-  clique_sites <- names(max_cliques_15[[i]])  # site IDs in this clique
-  
-  # pull each site's set of sampled years
-  years_list <- site_years$years[match(clique_sites, site_years$Stream_Name)]
-  
-  # intersect across ALL sites in the clique, not just pairs
-  shared <- sort(Reduce(intersect, years_list))
-  
-  tibble(
-    clique_id    = i,
-    n_sites      = length(clique_sites),
-    sites        = paste(clique_sites, collapse = ", "),
-    n_shared_yrs = length(shared),
-    shared_years = list(shared)
-  )
-})
-
-# Keep only cliques where the FULL group still shares >=15 years
-# (note: pairwise overlap >=15yrs does NOT guarantee the whole clique does --
-# adding a 3rd+ site can only shrink or maintain the shared-year count)
-clique_shared_years_15 <- clique_shared_years %>% filter(n_shared_yrs >= 16)
-print(clique_shared_years_15)
-
-
-#View the actual shared years for one clique:
-clique_shared_years_15$shared_years[[10]]
-
-# Long format: one row per clique-year
-clique_years_long <- clique_shared_years_15 %>%
-  select(clique_id, sites, shared_years) %>%
-  unnest(shared_years) %>%
-  rename(year = shared_years)
-print(clique_years_long)
-
-# If density is high (say, > 0.3-0.4) and max_cliques() is still slow,
-# a practical alternative is to just find the SINGLE largest group:
-largest_group <- largest_cliques(g)
-print(largest_group)
-
+print(site_detail)
