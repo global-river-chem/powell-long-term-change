@@ -11,8 +11,8 @@ library(sf)
 library(mapview)
 library(purrr)
 library(lubridate)
-#install.packages("igraph") # if needed
 library(igraph)
+library(googlesheets4)
 
 # directory for downloading files from google drive
 (path <- scicomptools::wd_loc(local = FALSE, remote_path = file.path('/', "home","jankowski","data")))
@@ -23,10 +23,8 @@ library(igraph)
 # Data import -------------------------------------------------------------
 
 ## Reference table
-ref_link<-"https://drive.google.com/file/d/1u4yNGOFOVKfQoEak7z9ovkFhtAm9XRE_/view?usp=drive_link"
-ref_folder = drive_get(as_id(ref_link))
-ref <- drive_download(file = ref_folder$id, path = file.path(path,"Site_Reference_Table.csv"), overwrite = T)
-ref_dat<-read_csv(ref$local_path)
+ref_link <- "https://docs.google.com/spreadsheets/d/11t9YYTzN_T12VAQhHuY5TpVjGS50ymNmKznJK4rKTIU/edit?usp=drive_link"
+ref_dat <- read_sheet(ref_link)
 
 # Annual data - generalized flow normalization 
 annual_dat <- read.csv(file.path(path_2, "Full_Results_WRTDS_annual.csv"))
@@ -42,36 +40,23 @@ trend_folder <- drive_get(as_id(trend_link))
 trend <- drive_download(file=trend_folder$id, path = file.path(path, "Full_Results_WRTDS_trends.csv"), overwrite=T)
 trend_dat <- read_csv(trend$local_path)
 
-## spatial data
+## spatial data - rewrote to just save locally, not to server
 spatial_link<- "https://drive.google.com/file/d/1mwpcPdxjPVSyempGG9-9yECSdHxdxhoh/view?usp=drive_link"
-spatial_folder <- drive_get(as_id(spatial_link))
-spatial <- drive_download(file=spatial_folder$id, path=file.path(path,"spatial_predictors_glass_climate_models_glc_20260919.csv"),overwrite=TRUE)
-spatial_dat <- read_csv(spatial$local_path)
+spatial_dat <- drive_download(as_id(spatial_link), path = tempfile(fileext = ".csv")) %>%
+  pull(local_path) %>%
+  read_csv()
 
-spatial_dat_check <- spatial_dat %>% 
-  select(contains("land"))
-
-## Coastal sites
-coastal_link <- "https://drive.google.com/file/d/1Xf8ErPzJJJBwR230NSTQrH5tAH4U0Ovb/view?usp=drive_link"
-coastal_folder <- drive_get(as_id(coastal_link))
-coastal <- drive_download(file=coastal_folder$id, path = file.path(path,"coastal_sites_list.csv"),overwrite = TRUE)
-coastal_list <- read_csv(coastal$local_path)
-
-# subset annual data to only coastal rivers
-coastal_rivers <- unique(coastal_list$Stream_Name)
-annual_dat_coast <- annual_dat %>% 
-  filter(Stream_Name %in% coastal_rivers | LTER == "Sweden"|LTER == "Seine"|Stream_Name == "COLUMBIA RIVER AT PORT WESTWARD")
-
+## Coastal sites - rewrote to just save locally, not to server
+coast_link <- "https://drive.google.com/file/d/1vXj5Wq5pG6nc9Awy29W1qPWGGyD6QOS0/view?usp=drive_link"
+coast_dat <- drive_download(as_id(coast_link), path = tempfile(fileext = ".csv")) %>%
+  pull(local_path) %>%
+  read_csv()
 
 ## cluster data
-# spatial data
-cluster_link<-"https://drive.google.com/file/d/13_cncYkrEw4ZgSY15TGMjMVivs_sr9d5/view?usp=drive_link"
-cluster_folder = drive_get(as_id(cluster_link))
-cluster <- drive_download(file = cluster_folder$id, path = file.path(path,"Si_sites_cluster_eight.csv"), overwrite = T)
-cluster_dat<-read_csv(cluster$local_path)
-
-cluster_dat$cluster_name <- as.factor(cluster_dat$cluster_name)
-glimpse(cluster_dat)
+#cluster_link<-"https://drive.google.com/file/d/13_cncYkrEw4ZgSY15TGMjMVivs_sr9d5/view?usp=drive_link"
+#cluster_folder = drive_get(as_id(cluster_link))
+#cluster <- drive_download(file = cluster_folder$id, path = file.path(path,"Si_sites_cluster_eight.csv"), overwrite = T)
+#cluster_dat<-read_csv(cluster$local_path)
 
 
 # sites select ------------------------------------------------------------
@@ -89,7 +74,7 @@ duration_dat <- annual_dat %>%
 
 # check for long records for main solutes (ratios regenerated below)
 chems <- c("NO3","NOx","P","DSi")
-n_yrs <- 15
+n_yrs <- 20
 
 # select sites that have at least a 15 year record
 duration_dat_wide <- duration_dat %>% 
@@ -106,6 +91,12 @@ duration_dat_wide <- duration_dat %>%
   pivot_wider(names_from = "chemical", values_from="duration") %>% 
   mutate(long_si = case_when(DSi>=n_yrs ~ "yes",
                              DSi<n_yrs ~ "no", 
+                             .default = NA),
+         long_n = case_when(NO3 >= n_yrs ~ "yes",
+                             NO3 < n_yrs ~ "no", 
+                             .default = NA),
+         long_p = case_when(P >=n_yrs ~ "yes",
+                             P <n_yrs ~ "no", 
                              .default = NA),
          long_si_n = case_when(DSi >= n_yrs & NO3 >= n_yrs ~ "yes", 
                               DSi < n_yrs | NO3 < n_yrs ~ "no", 
@@ -128,10 +119,14 @@ duration_dat_wide %>%
 ## look at results - number of streams with chemical records
 nrow(filter(duration_dat_wide, long_all == "yes"))
 nrow(filter(duration_dat_wide, long_si == "yes"))
+nrow(filter(duration_dat_wide, long_n == "yes"))
+nrow(filter(duration_dat_wide, long_p == "yes"))
 nrow(filter(duration_dat_wide, long_si_n == "yes"))
 nrow(filter(duration_dat_wide, long_si_p == "yes"))
 
-
+long_dat <- duration_dat_wide %>% 
+  filter(long_all == "yes") %>% 
+  distinct(Stream_Name)
 
 
 # list of sites with at least a 10 year record
